@@ -1,0 +1,12 @@
+{"id":"simple-01","state":"Translate 'good morning' to Korean.","label":"l1","category":"translation"}
+{"id":"simple-02","state":"Extract the order number from: Order 12345 shipped today.","label":"l1","category":"extraction"}
+{"id":"simple-03","state":"What is 9 plus 4?","label":"l1","category":"arithmetic"}
+{"id":"simple-04","state":"Classify this review as positive or negative: I loved the service.","label":"l1","category":"classification"}
+{"id":"mid-01","state":"Write a Python script to merge three CSV files with different column names, validate schema and log rejected rows.","label":"l2","category":"coding"}
+{"id":"mid-02","state":"Explain SQL joins using example tables and discuss when to use each join type.","label":"l2","category":"reasoning"}
+{"id":"mid-03","state":"Review this REST API pagination design and propose handling for expired cursors and retries.","label":"l2","category":"design"}
+{"id":"mid-04","state":"Summarize a technical meeting transcript into decisions, owners and open questions.","label":"l2","category":"summarization"}
+{"id":"hard-01","state":"Investigate a distributed deadlock combining asyncio cancellation, PostgreSQL row locks, and at-least-once message retries; propose a diagnosis strategy.","label":"l3","category":"debugging"}
+{"id":"hard-02","state":"Design a fault-tolerant multi-region payment ledger with exactly-once business effects, auditability and disaster recovery tradeoffs.","label":"l3","category":"architecture"}
+{"id":"hard-03","state":"Prove a nontrivial invariant for an asynchronous consensus protocol with partial synchrony and explain failure assumptions.","label":"l3","category":"formal-reasoning"}
+{"id":"hard-04","state":"Optimize an end-to-end GPU inference service balancing kernel fusion, quantization error, dynamic batching and tail latency under memory pressure.","label":"l3","category":"systems"}

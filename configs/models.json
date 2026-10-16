@@ -1,0 +1,8 @@
+{
+  "comment": "Illustrative configuration only. Not measured capability/cost claims.",
+  "tiers": {
+    "l1": {"description": "Small model", "example": "Qwen small-instruct", "relative_cost_units": 1},
+    "l2": {"description": "Medium model", "example": "Qwen medium-instruct", "relative_cost_units": 5},
+    "l3": {"description": "Strong reasoning model", "example": "Large reasoning LLM", "relative_cost_units": 30}
+  }
+}

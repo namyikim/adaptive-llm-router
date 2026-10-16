@@ -1,9 +1,15 @@
 __pycache__/
 *.py[cod]
+.pytest_cache/
 .venv/
-.env
+.ipynb_checkpoints/
 outputs/
 runs/
+models/
+checkpoints/
 *.pt
 *.safetensors
-.ipynb_checkpoints/
+.env
+.env.*
+!.env.example
+.kev/
