@@ -68,3 +68,25 @@ The upstream repo requires Python 3.12–3.13; its `uv` environment manages this
 - This repo contains only independently written integration/experiment files; it **does not vendor Kev weights or code**. Kev is Apache-2.0 licensed.
 
 See [experiment plan](docs/experiment-plan.md) before interpreting metrics.
+
+
+## Google Drive experiment results
+
+The Colab notebook now includes **Step 10 · Save results to Google Drive**.
+Once the experiment cells have finished, run that **single cell** in the same active Colab runtime.
+No GPU re-run is needed when `/content/outputs` still exists.
+
+The results are copied to:
+
+```text
+MyDrive/adaptive-llm-router/results/kev_a100_YYYYMMDD_HHMMSS_UTC/
+├── outputs/
+│   ├── router_demo.json
+│   └── kev_devtools_benchmark/report.json  # only when official benchmark was enabled
+├── kev_gpu_results.zip
+└── SAVE_COMPLETE.json  # written last, after successful copies
+```
+
+Every save uses a new timestamped folder to avoid overwriting prior runs.
+`router_demo.json` measures agreement against **illustrative labels**, not correctness of LLM-generated answers.
+For ChatGPT to read private Drive results, the user's Google Drive connection must be authorized.
