@@ -21,6 +21,14 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(report["n"], 2)
         self.assertEqual(report["illustrative_label_agreement"], 0.5)
         self.assertEqual(report["confusion"]["l1"]["l2"], 1)
+        self.assertEqual(report["raw_label_agreement"], 0.5)
+        self.assertEqual(report["demoted_count"], 0)
+
+    def test_detect_actual_demotions(self):
+        results = summarize([{"prediction": "l2", "proposed": "l3", "label": "l3", "uncertain": True}])
+        self.assertEqual(results["demoted_count"], 1)
+        self.assertEqual(results["raw_label_agreement"], 1.0)
+        self.assertEqual(results["illustrative_label_agreement"], 0.0)
 
 
 if __name__ == "__main__":
