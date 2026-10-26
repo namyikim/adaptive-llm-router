@@ -112,11 +112,20 @@ class AnalysisRouterTests(unittest.TestCase):
             select_analysis_model("code", "hi", backend="jev")
 
     @patch("adaptive_llm_router.analysis_router._post")
-    def test_uncertainty_escalates_to_l3(self, post):
+    def test_uncertain_simple_escalates_one_tier_not_to_opus(self, post):
         post.return_value = {"answers": {"start_tier": {"type": "choice",
                              "probabilities": {"l1": .40, "l2": .35, "l3": .25}}}}
         result = select_analysis_model("log", "deadlock", min_probability=.65)
         self.assertEqual(result.route.proposed_tier, "l1")
+        self.assertEqual(result.route.tier, "l2")
+        self.assertTrue(result.route.uncertain)
+
+    @patch("adaptive_llm_router.analysis_router._post")
+    def test_uncertain_l3_stays_l3(self, post):
+        post.return_value = {"answers": {"start_tier": {"type": "choice",
+                             "probabilities": {"l1": .11, "l2": .31, "l3": .58}}}}
+        result = select_analysis_model("log", "distributed deadlock", min_probability=.65)
+        self.assertEqual(result.route.proposed_tier, "l3")
         self.assertEqual(result.route.tier, "l3")
         self.assertTrue(result.route.uncertain)
 
