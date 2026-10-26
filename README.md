@@ -142,6 +142,10 @@ curl -sS http://127.0.0.1:8765/v1/analyze \
 
 The Gateway binds only to localhost; cloud calls are disabled unless explicitly enabled. API credentials live in the environment (never commit them). The proxy is for **testing with sanitized input**. Normal Messages API proxying forwards the original content unchanged, so remove secrets/customer data before using it. When Kev is unavailable the selector conservatively uses L3: check routing.status, and do not interpret that as an accurate router decision. No real performance or cost gain has yet been proven.
 
+## Next diagnostic: 10-case A100 checkpoint-verified pilot
+
+The previous BugsInPy 100-case experiment produced **100/100 identical probability vectors**, but the historical decision rows lacked actual checkpoint attestations. Before rerunning 100 cases, use the [new 10-case A100 pilot](notebooks/kev_identity_10_case_colab.ipynb). It reuses ten diverse inputs from the saved 100-case Drive folder and sequentially loads pinned **Kev-9B then Kev-4B**. Each model must pass a live `GET /v1/models.run` identity check before the notebook accepts its decisions. All individual probabilities, model attestations and separate startup logs persist to a new Drive folder. Full details: [verification procedure](docs/kev-identity-10-case-pilot.md). No paid Claude APIs are invoked.
+
 ## Audit existing 100-case runs without GPU
 
 **Do not rerun A100 only to check the previous 100-case equality anomaly.** Open the [CPU-only historical-run audit notebook](notebooks/audit_existing_kevs_colab.ipynb) instead. It reads a previously saved MyDrive BugsInPy run and writes `outputs/bugsinpy_legacy_audit.json`. The audit independently compares complete L1/L2/L3 choice-probability vectors, checks input hashes, duplicate/missing cases, and distinguishes historical unverified labels from checkpoints attested by `/v1/models`.
