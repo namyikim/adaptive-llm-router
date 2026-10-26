@@ -46,7 +46,8 @@ CRITERIA = {
 REDACTIONS = (
     (re.compile(r"-----BEGIN (?:[A-Z ]* )?PRIVATE KEY-----.*?-----END (?:[A-Z ]* )?PRIVATE KEY-----", re.I | re.S), "[REDACTED_PRIVATE_KEY]"),
     (re.compile(r"(?i)\b(authorization\s*:\s*bearer|bearer)\s+\S+"), r"\1 [REDACTED]"),
-    (re.compile(r"(?i)\b(api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret)\s*[:=]\s*['\"]?[^'\"\s,;]+"), r"\1=[REDACTED]"),
+    (re.compile(r"(?i)(?:['\\\"]?)(?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret)(?:['\\\"]?)\\s*[:=]\\s*(?:\\\"[^\\\"]*\\\"|'[^']*'|[^\\s,;}]+)"), "[REDACTED_SECRET_FIELD]"),
+    (re.compile(r"(?i)(https?://)[^/@\\s]+:[^/@\\s]+@"), r"\\1[REDACTED]@"),
     (re.compile(r"(?i)([?&](?:token|key|password|secret)=)[^&\s]+"), r"\1[REDACTED]"),
     (re.compile(r"\bgh[pousr]_[A-Za-z0-9_]{16,}\b"), "[REDACTED_GITHUB_TOKEN]"),
     (re.compile(r"\bsk-[A-Za-z0-9_-]{16,}\b"), "[REDACTED_API_KEY]"),
