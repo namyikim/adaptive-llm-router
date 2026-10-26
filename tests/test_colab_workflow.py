@@ -44,7 +44,7 @@ class ColabPersistenceTests(unittest.TestCase):
     def test_write_through_results_on_drive(self):
         selectors = [
             self._cell("kev_sample_choices.json"),
-            self._cell('"router_demo.json"'),
+            self._cell('str(OUTPUTS / "router_demo.json")'),
             self._cell('bench_out = OUTPUTS / "kev_devtools_benchmark"'),
             self._cell('gateway_selection_path = OUTPUTS / "kev_gateway_selection.json"'),
             self._cell('RUN_PAID_GATEWAY_TEST = False'),
