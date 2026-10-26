@@ -1,15 +1,23 @@
-# Adaptive LLM Router — KEV GPU Lab
+# Adaptive LLM Router — KEV-9B GPU Lab
 
 [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/namyikim/adaptive-llm-router/blob/main/notebooks/kev_a100_colab.ipynb)
 
-An experimental model router that runs **[Kev](https://github.com/jaredpalmer/kev)** on an NVIDIA GPU, tests its model-selection decisions, and lays the groundwork for a quality-verified bottom-up cascade.
+An experimental model router that runs **[Kev-9B](https://huggingface.co/jaredpalmer/kev-9b)** on an NVIDIA GPU, tests its model-selection decisions, and lays the groundwork for a quality-verified bottom-up cascade.
 
 > **Important:** Kev is a general-purpose *decision* model, not a validated LLM-capability predictor. The L1/L2/L3 labels in this repo are **illustrative human-assigned examples**, not measurements of whether real LLMs answered correctly. Do not infer routing accuracy, cost savings, or production quality from these examples alone.
+
+## Latest update: Kev-9B and safer model selection (2026-10-26)
+
+The default Colab A100 checkpoint is now **`jaredpalmer/kev-9b@v1.0`**, pinned for reproducible 4B-to-9B comparisons. Kev-9B requires around **22 GB of GPU resident memory**; the A100 notebook checks for **at least 30 GiB** of available GPU VRAM capacity as conservative headroom (an A100 40 GB or 80 GB is suitable). Kev-27B needs approximately 66 GB including serving buffers and is not a default for A100 40 GB. [Upstream Kev-9B model card](https://huggingface.co/jaredpalmer/kev-9b)
+
+**Routing policy corrected:** Uncertain decisions can promote a lower tier to at least L2 but never demote a selected L3 to L2. For the log/code Gateway, a borderline L1 becomes L2 rather than L3 solely because of a 65% cutoff. API failures still conservatively select L3 with explicit `backend_unavailable` status. Illustrative-label agreement is not real-world task success. The evaluation JSON now includes `raw_label_agreement` and `demoted_count`.
+
+**Google Drive check:** Colab mounts Google Drive at the beginning and writes/reads back `DRIVE_WRITE_VERIFIED.json` in the actual run folder. It also creates `LATEST_RUN.txt` in the results root and writes `RUN_STATUS.json` as it progresses. The presence of those files is a more reliable proof of storage than the Colab output alone. Check that Colab and Drive are using the same Google account. ChatGPT/GitHub cannot inspect a private Google Drive folder without user access.
 
 ## Quick start — Colab A100
 
 1. Click **Open in Colab** above, then `Runtime → Change runtime type → A100 GPU` (A100 availability depends on your Colab subscription).
-2. Run notebook cells in order: GPU check → install `uv` and clone upstream Kev → start Kev-4B server → smoke test → sample routing evaluation → optional official benchmark.
+2. Run notebook cells in order: GPU check → install `uv` and clone upstream Kev → start Kev-9B server → smoke test → sample routing evaluation → optional official benchmark.
 3. Download the CSV/JSON outputs from Colab's `/content/outputs`. Outputs and model weights are **not** committed to GitHub.
 
 No GitHub personal access token is needed to **clone this public repository** in Colab, and **no Hugging Face access token is required for public Kev checkpoints**. Some gated models/datasets may require separate access, but they are not part of the default smoke test. Never paste tokens into notebooks, chat, README, or commits.
@@ -26,7 +34,7 @@ No GitHub personal access token is needed to **clone this public repository** in
 ## Layout
 
 ```text
-notebooks/kev_a100_colab.ipynb    Colab A100 end-to-end walkthrough
+notebooks/kev_a100_colab.ipynb    Colab A100 Kev-9B end-to-end walkthrough
 src/adaptive_llm_router/         Kev API client, routing policy, evaluation
 benchmarks/data/demo_routing.jsonl  Small illustrative routing labels
 tests/                           CPU-only automated tests
@@ -55,7 +63,7 @@ Start the upstream server in another terminal first:
 git clone https://github.com/jaredpalmer/kev.git
 cd kev
 uv sync --extra serve
-uv run --extra serve python -m kev.serve --run jaredpalmer/kev-4b@v1.0 --device cuda --port 8009
+uv run --extra serve python -m kev.serve --run jaredpalmer/kev-9b@v1.0 --device cuda --port 8009
 ```
 
 The upstream repo requires Python 3.12–3.13; its `uv` environment manages this separately from Colab's notebook Python. **Do not** `pip install kev` — that PyPI name belongs to an unrelated package.
@@ -63,7 +71,7 @@ The upstream repo requires Python 3.12–3.13; its `uv` environment manages this
 ## Upstream & license
 
 - Kev repository: https://github.com/jaredpalmer/kev
-- Kev-4B checkpoint: https://huggingface.co/jaredpalmer/kev-4b
+- Kev-9B checkpoint: https://huggingface.co/jaredpalmer/kev-9b
 - Upstream evaluation suites: https://huggingface.co/datasets/jaredpalmer/kev-suites
 - This repo contains only independently written integration/experiment files; it **does not vendor Kev weights or code**. Kev is Apache-2.0 licensed.
 
