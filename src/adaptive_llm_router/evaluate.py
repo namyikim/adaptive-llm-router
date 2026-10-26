@@ -30,10 +30,14 @@ def summarize(rows: list[dict]) -> dict:
         raise ValueError("No results to summarize")
     total = len(rows)
     correct = sum(r["prediction"] == r["label"] for r in rows)
+    raw_correct = sum(r.get("proposed", r["prediction"]) == r["label"] for r in rows)
+    demoted = sum(TIERS.index(r["prediction"]) < TIERS.index(r.get("proposed", r["prediction"])) for r in rows)
     c = Counter((r["label"], r["prediction"]) for r in rows)
     return {
         "n": total,
         "illustrative_label_agreement": correct / total,
+        "raw_label_agreement": raw_correct / total,
+        "demoted_count": demoted,
         "uncertain_fraction": sum(bool(r["uncertain"]) for r in rows) / total,
         "confusion": {gold: {pred: c.get((gold, pred), 0) for pred in TIERS} for gold in TIERS},
         "note": "Agreement with subjective routing labels; not actual LLM success or cost reduction.",
