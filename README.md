@@ -70,27 +70,30 @@ The upstream repo requires Python 3.12–3.13; its `uv` environment manages this
 See [experiment plan](docs/experiment-plan.md) before interpreting metrics.
 
 
-## Google Drive experiment results — automatic on Colab Run All
+## Google Drive experiment results — write-through persistence
 
-When you choose **Runtime → Run all** in the [Colab A100 notebook](notebooks/kev_a100_colab.ipynb), the experiment runs, **step 10 writes the Kev Gateway decision and optional test statuses**, and **step 11 saves every output to Google Drive** (Drive authorization may be requested on first use). No separate save cell is needed.
+The [Colab A100 notebook](notebooks/kev_a100_colab.ipynb) **mounts Google Drive at the beginning of Run All**, before starting Kev. Approve Drive access when prompted. It creates a unique run folder and writes the JSON outputs, optional benchmark output, and Kev startup logs **directly to Drive when generated**, rather than waiting for the last cell.
 
-Google Drive: `MyDrive/adaptive-llm-router/results/kev_a100_YYYYMMDD_HHMMSS_UTC/`
+Google Drive: MyDrive/adaptive-llm-router/results/kev_a100_YYYYMMDD_HHMMSS_UTC_XXXXXX/
 
-```text
-results/kev_a100_YYYYMMDD_HHMMSS_UTC/
+~~~text
+kev_a100_YYYYMMDD_HHMMSS_UTC_XXXXXX/
+├── RUN_STATUS.json                  # continuously updated stage progress
+├── logs/kev_server.log             # written to Drive from server startup
 ├── outputs/
-│   ├── router_demo.json                     # illustrative labels only
-│   ├── kev_gateway_selection.json           # Kev tier/model/probabilities/status
-│   ├── kev_gateway_claude_test.json         # skipped by default; token usage if enabled
-│   ├── kev_gateway_http_test.json           # skipped by default; SSE stats if enabled
-│   └── kev_devtools_benchmark/report.json   # only if official benchmark was enabled
-├── kev_gpu_results.zip                      # rebuilt AFTER gateway cells
-└── SAVE_COMPLETE.json                       # created last
-```
+│   ├── kev_sample_choices.json
+│   ├── router_demo.json
+│   ├── kev_gateway_selection.json
+│   ├── kev_gateway_claude_test.json
+│   ├── kev_gateway_http_test.json
+│   └── kev_devtools_benchmark/      # optional
+├── kev_gpu_results.zip             # final archive, only when completed
+└── SAVE_COMPLETE.json              # emitted only after final success
+~~~
 
-Paid Claude/HTTP tests remain OFF by default. To save **full Claude analysis text** when paid testing is enabled, explicitly set `SAVE_PAID_ANALYSIS_TEXT=True`, but do not save sensitive log/code content to Google Drive without authorization. Normal saved routing output does **not** include input log text or API credentials. If you rerun step 11 it creates a fresh timestamped folder; the original outputs stay available in Colab until its runtime ends.
+**Disconnect recovery:** Even if the last ZIP and SAVE_COMPLETE.json are absent, check RUN_STATUS.json and the completed files under outputs/. An interrupted write may leave a partial JSON file; check that files are readable. Every fresh Run All creates a new folder, without deleting earlier results. A stopped computation is not automatically resumed, and model weights / Python runtime / GPU process are not backed up.
 
-The demo labels and routing selection do NOT measure actual task correctness. To review Drive data in ChatGPT, you can share the files here or authorize Google Drive.
+Paid Claude and HTTP integration tests are OFF by default. Full Claude analysis text is excluded unless explicitly enabled; never save credentials or proprietary logs without approval. The demo labels are illustrative, not actual LLM correctness.
 
 ## Log and code analysis model routing
 
@@ -109,7 +112,7 @@ For provider setup, exact API examples, model tier configuration, and a **verifi
 Kev can now choose a real Claude model for **log/code analysis**, and a local API Gateway can invoke the model via Anthropic's official Messages API. The gateway uses **Haiku 5.5 / Sonnet 5.5 / Opus 5.5** for L1/L2/L3 by default. It also supports an **experimental** POST /v1/messages proxy (JSON and SSE, including tool-use passthrough), POST /v1/messages/count_tokens, and session pinning. It does not execute tools, modify files, or guarantee Claude Code integration.
 
 - **Getting started & security:** [Kev Gateway test guide](docs/kev-gateway-test.md)
-- **Colab:** [Kev A100 + optional paid Claude Gateway smoke test](notebooks/kev_a100_colab.ipynb) (see step 10; Drive save is step 11).
+- **Colab:** [Kev A100 + optional paid Claude Gateway smoke test](notebooks/kev_a100_colab.ipynb) (Drive mount is step 1-2, outputs persist throughout, and final ZIP is step 11).
 - **New code:** src/adaptive_llm_router/gateway/
 
 ~~~bash
