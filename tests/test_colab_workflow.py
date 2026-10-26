@@ -21,6 +21,22 @@ class ColabPersistenceTests(unittest.TestCase):
         self.assertEqual(len(results), 1, marker)
         return results[0]
 
+    def test_kev_9b_pinned_and_gpu_memory_checked(self):
+        all_text = "\\n".join(self.sources)
+        self.assertIn('KEV_MODEL_REF = "jaredpalmer/kev-9b@v1.0"', all_text)
+        self.assertIn('"--run", KEV_MODEL_REF', all_text)
+        self.assertIn('GPU_MEMORY_MIB < 30000', all_text)
+        self.assertNotIn('"jaredpalmer/kev-4b@v1.0"', all_text)
+        self.assertIn('"kev_model_ref": KEV_MODEL_REF', all_text)
+
+    def test_drive_self_test_before_model_load(self):
+        mount_idx, mount = self._cell('drive.mount("/content/drive")')
+        server_idx, _ = self._cell('kev_server = subprocess.Popen(')
+        self.assertLess(mount_idx, server_idx)
+        self.assertIn('"DRIVE_WRITE_VERIFIED.json"', mount)
+        self.assertIn('verify_path.read_text(', mount)
+        self.assertIn('"LATEST_RUN.txt"', mount)
+
     def test_all_code_cells_compile(self):
         for idx, cell in enumerate(self.cells):
             if cell["cell_type"] == "code":
