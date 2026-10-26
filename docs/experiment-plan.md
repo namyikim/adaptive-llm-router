@@ -4,8 +4,8 @@
 
 - Use **Colab A100**, run `nvidia-smi`, confirm GPU available to Kev's `uv` Python (`torch.cuda.is_available()`).
 - Clone upstream `jaredpalmer/kev` and install with `uv sync --extra serve`; its `.python-version` is **3.13**.
-- Serve `jaredpalmer/kev-4b@v1.0` via `python -m kev.serve --device cuda` on `127.0.0.1:8009`. The initial call downloads the base and adapter.
-- Verify the upstream `POST /v1/systemone` returns `answers.start_tier.probabilities`.
+- Serve `jaredpalmer/kev-9b@v1.0` via `python -m kev.serve --device cuda` on `127.0.0.1:8009`. The initial call downloads the base and adapter; expect roughly 22 GB resident GPU memory on CUDA, with A100 40GB/80GB recommended for Colab.
+- Verify the upstream `POST /v1/systemone` returns `answers.start_tier.probabilities`. The Colab Drive write/readback check runs before GPU model loading.
 
 ## Phase 2 — Minimal routing sanity evaluation
 
@@ -32,7 +32,11 @@
 
 ## Notes and limitations
 
-- Kev-4B model card states English; Korean behavior requires new evaluation and possibly LoRA fine-tuning. The sample English dataset is intentional for the first smoke test.
+- Kev-9B model card states English; Korean behavior requires new evaluation and possibly LoRA fine-tuning. The sample English dataset is intentional for the first smoke test.
 - Zero-shot routing is not a demonstrated Kev capability. Choice probabilities are not model-success probabilities.
 - The *sample* `configs/models.json` names/cost units are hypothetical placeholders.
 - Do not commit model weights, benchmark outputs, tokens, private questions or credentials. GitHub CI is CPU-only.
+
+## Routing policy post-processing check (2026-10-26)
+
+Previous Kev-4B illustrative results: all 12 raw tier choices matched the hand-labelled tiers, but the original uncertainty rule demoted four low-confidence L3 choices to L2. The new uncertainty policy uses a **minimum tier**, never a replacement that lowers the proposed tier. A low-confidence L1 is elevated to L2; proposed L3 always remains L3. The log/code Gateway now also uses the L2 uncertainty floor, avoiding a costly L3 on a borderline simple KeyError. API failures still choose L3 and record backend_unavailable. Compare the actual 9B runs with the historical 4B results before claiming model improvements.
