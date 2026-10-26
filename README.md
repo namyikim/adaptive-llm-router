@@ -78,6 +78,12 @@ The upstream repo requires Python 3.12–3.13; its `uv` environment manages this
 See [experiment plan](docs/experiment-plan.md) before interpreting metrics.
 
 
+## Colab Drive credential propagation fallback (October 2026)
+
+Some Colab accounts return `MessageError: credential propagation was unsuccessful` when `drive.mount()` is called. This is a known, externally reported Colab authorization failure, **not a Kev model failure**. The notebook now tries DriveFS mount first; on failure, it attempts `google.colab.auth.authenticate_user()` followed by authenticated Google Drive API upload. If either route succeeds, the notebook verifies a file upload by reading the content back from Drive **before running GPU work**. In API mode, outputs are staged locally but uploaded to the same MyDrive run folder after every stage and after each BugsInPy case/decision. `RUN_STATUS.json` records `storage_mode: drivefs|drive_api`.
+
+If **both** Google authorization routes fail, no GPU model is started. The browser/account's authentication must be repaired: use a clean Chrome profile, verify Google account and consent, allow pop-ups/cookies, or file Colab **Help → Send feedback** with the traceback. Python cannot guarantee a fix for a Google-side OAuth failure. User results remain in MyDrive only after an upload has succeeded. The full Drive API mode has CPU/static tests but still needs an end-to-end authorized Colab run.
+
 ## Google Drive experiment results — write-through persistence
 
 The [Colab A100 notebook](notebooks/kev_a100_colab.ipynb) **mounts Google Drive at the beginning of Run All**, before starting Kev. Approve Drive access when prompted. It creates a unique run folder and writes the JSON outputs, optional benchmark output, and Kev startup logs **directly to Drive when generated**, rather than waiting for the last cell.

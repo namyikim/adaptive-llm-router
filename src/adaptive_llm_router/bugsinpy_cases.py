@@ -14,6 +14,7 @@ import json
 import re
 import subprocess
 from pathlib import Path
+from typing import Callable
 from urllib.parse import urlparse
 
 DEFAULT_BUGS = (("PySnooper", "1"), ("PySnooper", "2"), ("PySnooper", "3"),
@@ -149,7 +150,8 @@ def make_case(dataset_root: Path, checkout_root: Path, project: str, bug_id: str
 
 def collect_cases(dataset_root: Path, checkout_root: Path, output: Path,
                   selection: tuple[tuple[str, str], ...] = DEFAULT_BUGS,
-                  logs_dir: Path | None = None) -> dict:
+                  logs_dir: Path | None = None,
+                  checkpoint_callback: Callable[[], None] | None = None) -> dict:
     output.parent.mkdir(parents=True, exist_ok=True)
     done, errors = [], []
     # Resume safely; each finished record is flushed to disk immediately.
@@ -171,6 +173,10 @@ def collect_cases(dataset_root: Path, checkout_root: Path, output: Path,
             done.append(row)
         except (CasePreparationError, OSError, ValueError) as exc:
             errors.append({"id": f"{project}-{bug_id}", "error": str(exc)})
+            continue
+        # Fail closed if Drive API upload fails: never treat a local-only case as saved.
+        if checkpoint_callback:
+            checkpoint_callback()
     return {"cases_written": len(done), "errors": errors, "output": str(output),
             "note": "Actual historical source, not reproduced failing logs or verified task quality."}
 
