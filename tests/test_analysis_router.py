@@ -31,6 +31,17 @@ class AnalysisRouterTests(unittest.TestCase):
         self.assertIn("Traceback: race condition", state)
         self.assertIn("[REDACTED", state)
 
+    def test_json_secrets_and_url_userinfo(self):
+        state = prepare_state(
+            "log",
+            '{"password": "sensitive-password", "api_key":"sensitive-json"}\n'
+            'connection=https://dbuser:dbpass@example.com/db',
+        )
+        self.assertNotIn("sensitive-password", state)
+        self.assertNotIn("sensitive-json", state)
+        self.assertNotIn("dbpass", state)
+        self.assertIn("[REDACTED", state)
+
     def test_limits_and_validation(self):
         state = prepare_state("log", "ERROR X" * 4000, max_chars=200)
         self.assertIn("[TRUNCATED", state)
