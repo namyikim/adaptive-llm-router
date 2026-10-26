@@ -102,3 +102,24 @@ python -m unittest discover -s tests -v
 ```
 
 For provider setup, exact API examples, model tier configuration, and a **verified log/code outcome evaluation** methodology, read [log/code routing](docs/log-code-routing.md). The new `benchmark_verified` evaluator requires independently measured LLM outcomes; example tier labels are not actual task correctness.
+
+## Kev → Claude execution Gateway (local prototype)
+
+Kev can now choose a real Claude model for **log/code analysis**, and a local API Gateway can invoke the model via Anthropic's official Messages API. The gateway uses **Haiku 5.5 / Sonnet 5.5 / Opus 5.5** for L1/L2/L3 by default. It also supports an **experimental** POST /v1/messages proxy (JSON and SSE, including tool-use passthrough), POST /v1/messages/count_tokens, and session pinning. It does not execute tools, modify files, or guarantee Claude Code integration.
+
+- **Getting started & security:** [Kev Gateway test guide](docs/kev-gateway-test.md)
+- **Colab:** [Kev A100 + optional paid Claude Gateway smoke test](notebooks/kev_a100_colab.ipynb) (see step 11).
+- **New code:** src/adaptive_llm_router/gateway/
+
+~~~bash
+# Run Kev-4B locally at port 8009 first (see above); Anthropic API usage is billed.
+export ANTHROPIC_API_KEY="YOUR_API_KEY"
+PYTHONPATH=src python -m adaptive_llm_router.gateway --backend kev --enable-remote-llm
+
+curl http://127.0.0.1:8765/healthz
+curl -sS http://127.0.0.1:8765/v1/analyze \
+  -H 'Content-Type: application/json' \
+  -d '{"task_type":"code","content":"What is the bug in: def f(x): return x[0] when x=None?"}'
+~~~
+
+The Gateway binds only to localhost; cloud calls are disabled unless explicitly enabled. API credentials live in the environment (never commit them). The proxy is for **testing with sanitized input**. Normal Messages API proxying forwards the original content unchanged, so remove secrets/customer data before using it. When Kev is unavailable the selector conservatively uses L3: check routing.status, and do not interpret that as an accurate router decision. No real performance or cost gain has yet been proven.
