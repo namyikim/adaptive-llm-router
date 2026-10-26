@@ -73,3 +73,11 @@ print(inspect.getfile(collect_cases), inspect.signature(collect_cases))
 ```
 
 Avoid rerunning Drive mount/setup on the same Colab session: it creates a new run ID and could make partially written results harder to locate. After the repair, rerun only the failed sampling cell and subsequent cells. The GPU model is not restarted by this repair.
+
+## Model checkpoint identity verification (2026-10-26)
+
+An exploratory 100-case run returned **exactly matching 4B/9B tier distributions (L2=95, L3=5) and equal mean pmax (0.5533)**, which needs validation. Earlier code only labeled decisions based on the *intended* checkpoint and never compared that label against the live GPU server. The upstream Kev server exposes actual checkpoint identifier via `GET /v1/models` -> `models[0].run`; `/v1/systemone` returns the accepted alias `kev-latest` and is **not** checkpoint-size proof.
+
+The comparison runner now requires the live `/v1/models.run` to match `jaredpalmer/kev-9b@v1.0` or `jaredpalmer/kev-4b@v1.0` before writing choices. Each result row saves a validated identity and `bugsinpy_model_attestations.json` retains both live checks. **Older results with no checkpoint attestation are no longer counted as validated paired data**, even if their CSV labels say 4B/9B. It also records `exact_pmax_match_count` and `exact_probability_vector_match_count`; a full-vector match on every case is flagged for investigation, not interpreted as evidence of equality.
+
+To investigate a *previous* saved run without rerunning GPU, analyze `outputs/bugsinpy_kev_decisions.jsonl` and compare the full per-case `decision.probabilities` for each model. Also review `logs/kev_server.log` for the checkpoint load lines. Exact vector matches alone cannot establish which server generated the older run, because the old rows do not contain actual checkpoint identity.
