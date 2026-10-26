@@ -215,6 +215,7 @@ def collect_cases(dataset_root: Path, checkout_root: Path, output: Path,
                 import os
                 os.fsync(stream.fileno())
             done.append(row)
+            prior_ids.add(row["id"])  # defend against repeated candidates in one manifest
         except (CasePreparationError, OSError, ValueError) as exc:
             failure = {"id": f"{project}-{bug_id}", "error": str(exc),
                        "error_type": type(exc).__name__}
