@@ -38,6 +38,24 @@ class ColabPersistenceTests(unittest.TestCase):
         self.assertIn('verify_path.read_text(', mount)
         self.assertIn('"LATEST_RUN.txt"', mount)
 
+    def test_drive_api_auth_fallback_never_silently_uses_local_storage(self):
+        mounted_idx, mount = self._cell('drive.mount("/content/drive")')
+        self.assertIn("auth.authenticate_user()", mount)
+        self.assertIn('STORAGE_MODE = "drive_api"', mount)
+        self.assertIn("Google Drive API authentication failed", mount)
+        self.assertIn('fileId=probe_id, alt="media"', mount)
+        self.assertIn('remote_probe != probe', mount)
+        self.assertIn("sync_results_to_drive()", mount)
+        self.assertIn('_drive_api.files().create(', mount)
+        self.assertIn('_drive_api.files().update(', mount)
+        self.assertLess(mounted_idx, self._cell('kev_server = subprocess.Popen(')[0])
+
+    def test_each_bug_checkpoint_uploads_in_api_mode(self):
+        _, cases = self._cell('collection = collect_cases(DATASET, CHECKOUTS, CASE_PATH,')
+        _, compare = self._cell('result4 = collect_decisions(CASE_PATH, DECISIONS_PATH, "kev-4b@v1.0"')
+        self.assertIn("checkpoint_callback=sync_results_to_drive", cases)
+        self.assertIn("checkpoint_callback=sync_results_to_drive", compare)
+
     def test_all_code_cells_compile(self):
         for idx, cell in enumerate(self.cells):
             if cell["cell_type"] == "code":
