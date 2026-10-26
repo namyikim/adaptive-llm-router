@@ -42,13 +42,13 @@ class ColabPersistenceTests(unittest.TestCase):
         mounted_idx, mount = self._cell('drive.mount("/content/drive")')
         self.assertIn("auth.authenticate_user()", mount)
         self.assertIn('STORAGE_MODE = "drive_api"', mount)
-        self.assertIn("Google Drive API authentication failed", mount)
+        self.assertIn("Drive API authentication failed", mount)
         self.assertIn('fileId=probe_id, alt="media"', mount)
         self.assertIn('remote_probe != probe', mount)
         self.assertIn("sync_results_to_drive()", mount)
         self.assertIn('_drive_api.files().create(', mount)
         self.assertIn('_drive_api.files().update(', mount)
-        self.assertLess(mounted_idx, self._cell('kev_server = subprocess.Popen(')[0])
+        self.assertLess(mounted_idx, self._cell('log_path = RUN_ROOT / "logs" / "kev_server.log"')[0])
 
     def test_each_bug_checkpoint_uploads_in_api_mode(self):
         _, cases = self._cell('collection = collect_cases(DATASET, CHECKOUTS, CASE_PATH,')
