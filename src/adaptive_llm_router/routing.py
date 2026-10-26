@@ -57,7 +57,9 @@ def parse_route(response: dict, *, min_probability: float = 0.65, uncertain_tier
     proposed = max(TIERS, key=probs.__getitem__)
     p_max = probs[proposed]
     uncertain = p_max < min_probability
-    tier = uncertain_tier if uncertain else proposed
+    # Uncertainty may raise the minimum tier but must NEVER demote a Kev L3 decision.
+    # Example: proposed L3 with p=0.59 remains L3, not the default L2.
+    tier = TIERS[max(TIERS.index(proposed), TIERS.index(uncertain_tier))] if uncertain else proposed
     raw_latency = response.get("latency_ms")
     return Route(tier, proposed, p_max, probs, uncertain, float(raw_latency) if raw_latency is not None else None)
 

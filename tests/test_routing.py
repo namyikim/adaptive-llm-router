@@ -23,6 +23,18 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(decision.tier, "l2")
         self.assertTrue(decision.uncertain)
 
+    def test_uncertain_l3_never_demoted(self):
+        # Regression: previous L2 fallback changed correct L3 to L2.
+        p = {"l1": 0.1141, "l2": 0.3020, "l3": 0.5839}
+        result = parse_route(self.response(p), min_probability=0.65)
+        self.assertEqual(result.proposed_tier, "l3")
+        self.assertEqual(result.tier, "l3")
+        self.assertTrue(result.uncertain)
+
+    def test_uncertain_l2_remains_l2(self):
+        result = parse_route(self.response({"l1": .10, "l2": .58, "l3": .32}))
+        self.assertEqual(result.tier, "l2")
+
     def test_invalid_probabilities(self):
         with self.assertRaises(ValueError):
             parse_route(self.response({"l1": 0.5, "l2": 0.5}))
