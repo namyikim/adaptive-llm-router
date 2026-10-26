@@ -51,10 +51,21 @@ class ColabPersistenceTests(unittest.TestCase):
         self.assertLess(mounted_idx, self._cell('log_path = RUN_ROOT / "logs" / "kev_server.log"')[0])
 
     def test_each_bug_checkpoint_uploads_in_api_mode(self):
-        _, cases = self._cell('collection = collect_cases(DATASET, CHECKOUTS, CASE_PATH,')
+        _, cases = self._cell('collection = collect_cases(')
         _, compare = self._cell('result4 = collect_decisions(CASE_PATH, DECISIONS_PATH, "kev-4b@v1.0"')
         self.assertIn("checkpoint_callback=sync_results_to_drive", cases)
         self.assertIn("checkpoint_callback=sync_results_to_drive", compare)
+
+    def test_large_scale_stratified_sampling_is_checkpointed(self):
+        _, cases = self._cell('BUGSINPY_TARGET_SUCCESSFUL_CASES = 100')
+        self.assertIn('BUGSINPY_CONTEXT_MODE = "test_only"', cases)
+        self.assertIn('manifest(DATASET, seed=BUGSINPY_SAMPLE_SEED', cases)
+        self.assertIn('stratified_plan(DATASET, seed=BUGSINPY_SAMPLE_SEED', cases)
+        self.assertIn('target_successes=BUGSINPY_TARGET_SUCCESSFUL_CASES', cases)
+        self.assertIn('failure_log=OUTPUTS / "bugsinpy_collection_errors.jsonl"', cases)
+        self.assertIn('checkpoint_callback=sync_results_to_drive', cases)
+        _, finish = self._cell('archive_path = shutil.make_archive(str(root / "kev_gpu_results")')
+        self.assertIn('"bugsinpy_sample_manifest.json"', finish)
 
     def test_all_code_cells_compile(self):
         for idx, cell in enumerate(self.cells):

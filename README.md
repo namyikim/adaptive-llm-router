@@ -18,7 +18,7 @@ The default Colab A100 checkpoint is now **`jaredpalmer/kev-9b@v1.0`**, pinned f
 
 1. Click **Open in Colab** above, then `Runtime → Change runtime type → A100 GPU` (A100 availability depends on your Colab subscription).
 2. Run notebook cells in order: GPU check → install `uv` and clone upstream Kev → start Kev-9B server → smoke test → sample routing evaluation → optional official benchmark.
-3. Download the CSV/JSON outputs from Colab's `/content/outputs`. Outputs and model weights are **not** committed to GitHub.
+3. After `Run All`, read `MyDrive/adaptive-llm-router/results/<run-id>/outputs/` and the final `kev_gpu_results.zip`. Results and model weights are **not** committed to GitHub.
 
 No GitHub personal access token is needed to **clone this public repository** in Colab, and **no Hugging Face access token is required for public Kev checkpoints**. Some gated models/datasets may require separate access, but they are not part of the default smoke test. Never paste tokens into notebooks, chat, README, or commits.
 
@@ -142,12 +142,12 @@ curl -sS http://127.0.0.1:8765/v1/analyze \
 
 The Gateway binds only to localhost; cloud calls are disabled unless explicitly enabled. API credentials live in the environment (never commit them). The proxy is for **testing with sanitized input**. Normal Messages API proxying forwards the original content unchanged, so remove secrets/customer data before using it. When Kev is unavailable the selector conservatively uses L3: check routing.status, and do not interpret that as an accurate router decision. No real performance or cost gain has yet been proven.
 
-## Real BugsInPy paired Kev-4B vs Kev-9B test
+## Large-scale BugsInPy paired Kev-4B / Kev-9B exploratory experiment
 
-**Colab Run All now runs a six-case paired comparison by default** after the existing Kev-9B sanity evaluation. It fetches actual buggy Python source and test snippets for three PySnooper issues and three tqdm issues, routes every case through Kev-9B, then stops that server and loads pinned Kev-4B on the same A100 GPU. Each decision is saved immediately to Google Drive, followed by an aggregate comparison and final ZIP.
+**Colab Run All now targets 100 successfully extracted historical test contexts** from 12 public Python projects, sampled with deterministic seed 20261026 using capped, project-round-robin candidate selection. It uses test sources at historical buggy commits and does not consult the fixing diff by default. Unlike the earlier 6-case oracle-assisted pilot, the default `test_only` context mode does not include fixed-file locations; the affected test path is still a metadata hint and no failures are reproduced.
 
-- Results: outputs/bugsinpy_cases.jsonl, outputs/bugsinpy_kev_decisions.jsonl, outputs/bugsinpy_comparison.json.
-- Disable the extra experiment with RUN_BUGSINPY_COMPARE=False in the Colab section 11.
-- This experiment uses public historical source and does NOT automatically reproduce logs, run the bug tests, or measure LLM fix success. Fix-diff-derived filenames are a location hint; do not report the decision agreement as unbiased routing accuracy.
-- Details: [BugsInPy paired evaluation methodology](docs/bugsinpy-paired-evaluation.md).
-
+- Kev-9B and then Kev-4B sequentially choose L1/L2/L3 for the **same input text and SHA-256 fingerprint**, with per-case Drive checkpoints.
+- New artifacts: `outputs/bugsinpy_sample_manifest.json` (frozen candidate IDs/seed), `outputs/bugsinpy_cases.jsonl`, `outputs/bugsinpy_collection_errors.jsonl`, `outputs/bugsinpy_collection_status.json`, `outputs/bugsinpy_kev_decisions.jsonl`, `outputs/bugsinpy_comparison.json`.
+- Colab section 11 defaults: `RUN_BUGSINPY_COMPARE=True`, `BUGSINPY_TARGET_SUCCESSFUL_CASES=100`, `BUGSINPY_CONTEXT_MODE='test_only'`, `BUGSINPY_MAX_PER_PROJECT=20`. Candidate retrieval failures may mean **fewer than 100 cases**; report the `shortfall` field rather than assuming success.
+- Actual bug repro and LLM repair outcomes are **not executed**. Compare per-project decision distributions, agreement, and latency only—not routing correctness, success rate, quality or savings.
+- For methodology, caveats and future controlled reproduction see [BugsInPy paired evaluation](docs/bugsinpy-paired-evaluation.md).

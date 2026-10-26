@@ -12,6 +12,7 @@ import os
 import statistics
 import time
 from pathlib import Path
+from collections import Counter
 from typing import Callable
 
 from .analysis_router import select_analysis_model
@@ -113,6 +114,9 @@ def compare_decisions(cases: list[dict], result_rows: list[dict]) -> dict:
             continue  # never silently pair different inputs
         latest[(row["id"], label)] = row
     summaries = {}
+    project_by_id = {c["id"]: c["id"].rsplit("-", 1)[0] for c in cases}
+    contexts = Counter(c.get("context_mode", "fix_diff") for c in cases)
+    projects = Counter(project_by_id.values())
     for label in MODEL_LABELS:
         records = [latest[(case_id, label)] for case_id in inputs
                    if (case_id, label) in latest]
@@ -130,6 +134,8 @@ def compare_decisions(cases: list[dict], result_rows: list[dict]) -> dict:
                 if isinstance(r["decision"].get("decision_latency_ms"), (int, float))
                 and math.isfinite(r["decision"]["decision_latency_ms"])]),
             "mean_e2e_decision_ms": _mean_or_none([r["end_to_end_decision_ms"] for r in good]),
+            "median_e2e_decision_ms": round(statistics.median(
+                r["end_to_end_decision_ms"] for r in good), 4) if good else None,
         }
     paired = []
     for case in cases:
@@ -153,8 +159,24 @@ def compare_decisions(cases: list[dict], result_rows: list[dict]) -> dict:
             "kev4_model_latency_ms": ca["decision_latency_ms"],
             "kev9_model_latency_ms": cb["decision_latency_ms"],
         })
+    per_project = {}
+    for project in sorted(projects):
+        matching = [r for r in paired if project_by_id[r["id"]] == project]
+        per_project[project] = {
+            "n_input_cases": projects[project],
+            "n_paired": len(matching),
+            "n_raw_disagreement": sum(r["kev4_raw"] != r["kev9_raw"] for r in matching),
+            "n_final_disagreement": sum(r["kev4_final"] != r["kev9_final"] for r in matching),
+        }
     return {
         "evaluation": "paired_actual_buggy_source_routing_exploration",
+        "context_mode_distribution": dict(contexts),
+        "project_case_counts": dict(sorted(projects.items())),
+        "per_project_comparison": per_project,
+        "n_raw_disagreement": sum(r["kev4_raw"] != r["kev9_raw"] for r in paired),
+        "n_final_disagreement": sum(r["kev4_final"] != r["kev9_final"] for r in paired),
+        "mean_pmax_difference_kev9_minus_kev4": _mean_or_none(
+            [r["kev9_pmax"] - r["kev4_pmax"] for r in paired]),
         "n_cases": len(cases),
         "n_paired": len(paired),
         "raw_agreement_rate": (
@@ -167,7 +189,10 @@ def compare_decisions(cases: list[dict], result_rows: list[dict]) -> dict:
         "paired_cases": paired,
         "warnings": [
             "These are real buggy Python source excerpts, but failures were NOT reproduced unless log_status is externally_supplied.",
-            "Source files were selected using fixing diff filenames: potential oracle/location leakage; NOT a blind accuracy benchmark.",
+            ("Fix-diff filename oracle used in some cases; NOT a blind benchmark." if
+             contexts.get("fix_diff", 0) else
+             "Only known test files from metadata were used, no fixing diff paths. "
+             "Missing failure logs and issue descriptions still prevent task success scoring."),
             "No independent correctness labels or target LLM success/failure. Choice agreement and confidence are NOT routing accuracy.",
             "Speed comparisons may be affected by warm-up, CUDA state and caching; repeat randomized runs before claims.",
         ],
