@@ -1,17 +1,17 @@
 {
-  "comment": "Initial Claude API candidates, not benchmark-certified. Review availability, price and policies before real execution. Model selection only.",
+  "comment": "Initial trial mapping to verified current Claude API IDs (Oct 2026). No claimed benchmark superiority; account access and real pricing require verification.",
   "tiers": {
     "l1": {
-      "model_id": "claude-haiku-4-5",
-      "description": "routine log parsing/simple edits"
+      "model_id": "claude-haiku-5-5",
+      "description": "Easy extraction, single traceback or isolated code issue"
     },
     "l2": {
-      "model_id": "claude-sonnet-5",
-      "description": "ordinary debugging/multi-file analysis"
+      "model_id": "claude-sonnet-5-5",
+      "description": "Multi-file analysis and ordinary debugging"
     },
     "l3": {
-      "model_id": "claude-opus-5",
-      "description": "complex, high-impact debugging/systems reasoning"
+      "model_id": "claude-opus-5-5",
+      "description": "High-risk and complex incidents, systems/concurrency/GPU"
     }
   }
 }
