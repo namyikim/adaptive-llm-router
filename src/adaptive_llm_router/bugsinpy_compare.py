@@ -12,6 +12,7 @@ import os
 import statistics
 import time
 from pathlib import Path
+from typing import Callable
 
 from .analysis_router import select_analysis_model
 from .routing import TIERS
@@ -46,7 +47,8 @@ def read_rows(path: Path) -> list[dict]:
 
 
 def collect_decisions(cases_path: Path, output_path: Path, model_label: str, *,
-                      base_url: str = "http://127.0.0.1:8009") -> dict:
+                      base_url: str = "http://127.0.0.1:8009",
+                      checkpoint_callback: Callable[[], None] | None = None) -> dict:
     if model_label not in MODEL_LABELS:
         raise ValueError("Model label must identify a pinned Kev checkpoint")
     cases = read_cases(cases_path)
@@ -85,6 +87,9 @@ def collect_decisions(cases_path: Path, output_path: Path, model_label: str, *,
             out.write(json.dumps(row, ensure_ascii=False) + "\n")
             out.flush()
             os.fsync(out.fileno())
+        # Ensure each completed choice is uploaded before moving to the next case.
+        if checkpoint_callback:
+            checkpoint_callback()
         completed.add(identity)
         new_successes += status == "proposed"
         print(f"{model_label} {case['id']}: {status} "
