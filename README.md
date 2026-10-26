@@ -90,3 +90,15 @@ MyDrive/adaptive-llm-router/results/kev_a100_YYYYMMDD_HHMMSS_UTC/
 Every save uses a new timestamped folder to avoid overwriting prior runs.
 `router_demo.json` measures agreement against **illustrative labels**, not correctness of LLM-generated answers.
 For ChatGPT to read private Drive results, the user's Google Drive connection must be authorized.
+
+## Log and code analysis model routing
+
+The experimental selector now supports **Kev (local), Jev (hosted) and OpenAI Decisions (hosted)** using separate task-specific routing questions for **log/incident analysis** and **code/debugging analysis**. It returns an L1/L2/L3 tier and a configurable Claude model ID; it **does not invoke Claude**. Hosted calls require explicit `--allow-remote` and credentials, and errors/low-confidence choices conservatively select L3. Common secret patterns are redacted, but this is not comprehensive DLP; do not send confidential material to third parties without authorization.
+
+```bash
+PYTHONPATH=src python -m adaptive_llm_router.analysis_router --task log --file /path/to/redacted.log --backend kev
+PYTHONPATH=src python -m adaptive_llm_router.analysis_router --task code --file /path/to/redacted.py --backend kev
+python -m unittest discover -s tests -v
+```
+
+For provider setup, exact API examples, model tier configuration, and a **verified log/code outcome evaluation** methodology, read [log/code routing](docs/log-code-routing.md). The new `benchmark_verified` evaluator requires independently measured LLM outcomes; example tier labels are not actual task correctness.

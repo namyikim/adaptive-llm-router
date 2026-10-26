@@ -1,0 +1,17 @@
+{
+  "comment": "Initial Claude API candidates, not benchmark-certified. Review availability, price and policies before real execution. Model selection only.",
+  "tiers": {
+    "l1": {
+      "model_id": "claude-haiku-4-5",
+      "description": "routine log parsing/simple edits"
+    },
+    "l2": {
+      "model_id": "claude-sonnet-5",
+      "description": "ordinary debugging/multi-file analysis"
+    },
+    "l3": {
+      "model_id": "claude-opus-5",
+      "description": "complex, high-impact debugging/systems reasoning"
+    }
+  }
+}
