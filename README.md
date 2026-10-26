@@ -135,3 +135,13 @@ curl -sS http://127.0.0.1:8765/v1/analyze \
 ~~~
 
 The Gateway binds only to localhost; cloud calls are disabled unless explicitly enabled. API credentials live in the environment (never commit them). The proxy is for **testing with sanitized input**. Normal Messages API proxying forwards the original content unchanged, so remove secrets/customer data before using it. When Kev is unavailable the selector conservatively uses L3: check routing.status, and do not interpret that as an accurate router decision. No real performance or cost gain has yet been proven.
+
+## Real BugsInPy paired Kev-4B vs Kev-9B test
+
+**Colab Run All now runs a six-case paired comparison by default** after the existing Kev-9B sanity evaluation. It fetches actual buggy Python source and test snippets for three PySnooper issues and three tqdm issues, routes every case through Kev-9B, then stops that server and loads pinned Kev-4B on the same A100 GPU. Each decision is saved immediately to Google Drive, followed by an aggregate comparison and final ZIP.
+
+- Results: outputs/bugsinpy_cases.jsonl, outputs/bugsinpy_kev_decisions.jsonl, outputs/bugsinpy_comparison.json.
+- Disable the extra experiment with RUN_BUGSINPY_COMPARE=False in the Colab section 11.
+- This experiment uses public historical source and does NOT automatically reproduce logs, run the bug tests, or measure LLM fix success. Fix-diff-derived filenames are a location hint; do not report the decision agreement as unbiased routing accuracy.
+- Details: [BugsInPy paired evaluation methodology](docs/bugsinpy-paired-evaluation.md).
+
