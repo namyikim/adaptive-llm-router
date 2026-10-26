@@ -63,7 +63,7 @@ class BugsInPyTests(unittest.TestCase):
         self.assertNotIn("if x else None", row["input"])
         self.assertEqual(row["log_status"], "not_reproduced")
         self.assertFalse(row["verification"]["executed"])
-        self.assertIn("oracle", row["oracle_hint_warning"])
+        self.assertIn("fixing diff", row["oracle_hint_warning"])
         self.assertEqual(row["selected_files"], ["module.py"])
 
     def test_attached_real_log_is_explicitly_labeled(self):
