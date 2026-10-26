@@ -142,6 +142,12 @@ curl -sS http://127.0.0.1:8765/v1/analyze \
 
 The Gateway binds only to localhost; cloud calls are disabled unless explicitly enabled. API credentials live in the environment (never commit them). The proxy is for **testing with sanitized input**. Normal Messages API proxying forwards the original content unchanged, so remove secrets/customer data before using it. When Kev is unavailable the selector conservatively uses L3: check routing.status, and do not interpret that as an accurate router decision. No real performance or cost gain has yet been proven.
 
+## Audit existing 100-case runs without GPU
+
+**Do not rerun A100 only to check the previous 100-case equality anomaly.** Open the [CPU-only historical-run audit notebook](notebooks/audit_existing_kevs_colab.ipynb) instead. It reads a previously saved MyDrive BugsInPy run and writes `outputs/bugsinpy_legacy_audit.json`. The audit independently compares complete L1/L2/L3 choice-probability vectors, checks input hashes, duplicate/missing cases, and distinguishes historical unverified labels from checkpoints attested by `/v1/models`.
+
+The earlier 100-case run gave identical 4B/9B tier distributions (95×L2, 5×L3) and identical rounded mean pmax (0.5533). These two equal means alone do not show that every probability vector was equal; and **legacy model labels are not proof of which weights served the request**. Only new runs after PR #10 record live checkpoint identity. See [audit methodology](docs/legacy-kev-result-audit.md).
+
 ## Large-scale BugsInPy paired Kev-4B / Kev-9B exploratory experiment
 
 **Colab Run All now targets 100 successfully extracted historical test contexts** from 12 public Python projects, sampled with deterministic seed 20261026 using capped, project-round-robin candidate selection. It uses test sources at historical buggy commits and does not consult the fixing diff by default. Unlike the earlier 6-case oracle-assisted pilot, the default `test_only` context mode does not include fixed-file locations; the affected test path is still a metadata hint and no failures are reproduced.
