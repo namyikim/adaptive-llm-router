@@ -213,7 +213,9 @@ def select_analysis_model(task_type: str, content: str, *, backend: str = "kev",
     try:
         raw = _call_backend(state, task_type, backend, allow_remote=allow_remote,
                             base_url=base_url, timeout=timeout)
-        route = parse_route(raw, min_probability=min_probability, uncertain_tier="l3")
+        # Use L2 as a minimum only when unsure: L1->L2, L2->L2, L3->L3.
+        # This avoids promoting a borderline simple KeyError directly to costly L3.
+        route = parse_route(raw, min_probability=min_probability, uncertain_tier="l2")
         status, warning = "proposed", None
     except (DecisionBackendError, ValueError, KeyError, TypeError) as exc:
         if not fallback_on_error:
