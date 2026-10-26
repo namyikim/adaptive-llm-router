@@ -54,3 +54,22 @@ Choice agreement is the fraction of **paired Kev-4B and Kev-9B responses that se
 To estimate real quality and cost savings, independently execute identical debugging prompts on each target LLM, verify against passing tests in isolated environments, prevent fix-patch leakage, and populate benchmark_verified with observed success/failure, latency and cost. This expensive / external execution is explicitly **not** enabled by default.
 
 Sources: https://github.com/soarsmu/BugsInPy and https://github.com/jaredpalmer/kev
+
+## Recovering Colab error: unexpected keyword argument 'context_mode'
+
+If the sampling cell prints `Candidate issues: 158 projects: 12` and fails at `collect_cases(..., context_mode=...)`, the currently loaded Python module was older than the checked-out notebook. The notebook now pulls the latest project sources and explicitly reloads the cached `adaptive_llm_router.bugsinpy_cases`, `bugsinpy_sampling`, and `bugsinpy_compare` modules at the beginning of section 11. It validates both `inspect.getfile(collect_cases)` and the expected keyword arguments before attempting data collection.
+
+For a **currently running Colab tab** that has not loaded the updated notebook, execute the following small repair cell and then run **section 11 only**, keeping Kev-9B and the GPU session alive:
+
+```python
+import importlib, inspect, subprocess
+subprocess.run(["git", "-C", str(ROOT), "pull", "--ff-only"], check=True)
+import adaptive_llm_router.bugsinpy_cases as bug_module
+importlib.invalidate_caches()
+importlib.reload(bug_module)
+collect_cases = bug_module.collect_cases
+assert "context_mode" in inspect.signature(collect_cases).parameters
+print(inspect.getfile(collect_cases), inspect.signature(collect_cases))
+```
+
+Avoid rerunning Drive mount/setup on the same Colab session: it creates a new run ID and could make partially written results harder to locate. After the repair, rerun only the failed sampling cell and subsequent cells. The GPU model is not restarted by this repair.
