@@ -66,6 +66,46 @@ class BugsInPyTests(unittest.TestCase):
         self.assertIn("fixing diff", row["oracle_hint_warning"])
         self.assertEqual(row["selected_files"], ["module.py"])
 
+    def test_test_only_mode_never_reads_fix_diff_or_fixed_source(self):
+        with patch("adaptive_llm_router.bugsinpy_cases.clone_project", return_value=self.repo):
+            with patch("adaptive_llm_router.bugsinpy_cases.git",
+                       wraps=__import__("adaptive_llm_router.bugsinpy_cases",
+                                        fromlist=["git"]).git) as mocked:
+                row = make_case(self.dataset, self.root / "checkouts", "demo", "1",
+                                context_mode="test_only")
+        self.assertEqual(row["context_mode"], "test_only")
+        self.assertIn("test_module.py", row["input"])
+        self.assertNotIn("return x[0] if x else None", row["input"])
+        self.assertEqual(row["selected_files"], ["test_module.py"])
+        self.assertFalse(any(args[0][0][0] == "diff" for args in mocked.call_args_list))
+
+    def test_target_successes_stops_early_and_preserves_failure_report(self):
+        output = self.root / "cases.jsonl"
+        failure_log = self.root / "collection_errors.jsonl"
+        selection = (("demo", "999"), ("demo", "1"), ("demo", "1"))
+        with patch("adaptive_llm_router.bugsinpy_cases.clone_project", return_value=self.repo):
+            result = collect_cases(
+                self.dataset, self.root, output, selection=selection,
+                context_mode="test_only", target_successes=2, failure_log=failure_log,
+            )
+        self.assertEqual(result["cases_written"], 1)
+        self.assertEqual(result["shortfall"], 1)
+        self.assertEqual(result["context_mode"], "test_only")
+        self.assertEqual(len(result["errors"]), 1)
+        self.assertEqual(len(failure_log.read_text().splitlines()), 1)
+        with self.assertRaises(ValueError):
+            collect_cases(self.dataset, self.root, output, selection=selection,
+                          context_mode="fix_diff")
+
+    def test_success_target_does_not_overshoot(self):
+        out = self.root / "cases.jsonl"
+        with patch("adaptive_llm_router.bugsinpy_cases.clone_project", return_value=self.repo):
+            res = collect_cases(self.dataset, self.root, out,
+                                selection=(("demo", "1"), ("demo", "2")),
+                                context_mode="test_only", target_successes=1)
+        self.assertEqual(res["cases_written"], 1)
+        self.assertEqual(res["attempts_this_run"], 1)
+
     def test_attached_real_log_is_explicitly_labeled(self):
         logs = self.root / "logs"
         logs.mkdir()
