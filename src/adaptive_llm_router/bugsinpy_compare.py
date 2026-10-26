@@ -14,11 +14,52 @@ import time
 from pathlib import Path
 from collections import Counter
 from typing import Callable
+from urllib.request import urlopen
 
 from .analysis_router import select_analysis_model
 from .routing import TIERS
 
 MODEL_LABELS = ("kev-4b@v1.0", "kev-9b@v1.0")
+
+class KevModelMismatch(RuntimeError):
+    """The live GPU server did not attest to the expected pinned Kev checkpoint."""
+
+
+def probe_model_identity(base_url: str, expected_label: str, *, timeout: float = 12.0) -> dict:
+    """Validate checkpoint identity from the upstream server's actual /v1/models.run.
+
+    Request payloads/responses saying "kev-latest" don't attest checkpoint size.
+    Never infer the running model from the label assigned by the notebook.
+    """
+    if expected_label not in MODEL_LABELS:
+        raise ValueError("Unknown checkpoint label")
+    expected_run = "jaredpalmer/" + expected_label
+    try:
+        with urlopen(base_url.rstrip("/") + "/v1/models", timeout=timeout) as response:
+            data = json.load(response)
+    except (OSError, TimeoutError, ValueError) as exc:
+        raise KevModelMismatch("Cannot independently identify the local Kev server") from exc
+    models = data.get("models") if isinstance(data, dict) else None
+    if not isinstance(models, list) or not models:
+        raise KevModelMismatch("Kev /v1/models has no model cards")
+    runs = {card.get("run") for card in models if isinstance(card, dict)}
+    if runs != {expected_run}:
+        raise KevModelMismatch(
+            f"Wrong Kev server on {base_url}: expected {expected_run!r}, "
+            f"reported {sorted(str(run) for run in runs)!r}"
+        )
+    card = models[0]
+    return {
+        "checkpoint_run": expected_run,
+        "reported_run": card["run"],
+        "base": card.get("base"),
+        "device": card.get("device"),
+        "backend": card.get("backend"),
+        "dtype": str(card.get("dtype")) if card.get("dtype") is not None else None,
+        "verified_from": "/v1/models.run",
+        "verified": True,
+    }
+
 
 
 def read_cases(path: Path) -> list[dict]:
@@ -52,10 +93,17 @@ def collect_decisions(cases_path: Path, output_path: Path, model_label: str, *,
                       checkpoint_callback: Callable[[], None] | None = None) -> dict:
     if model_label not in MODEL_LABELS:
         raise ValueError("Model label must identify a pinned Kev checkpoint")
+    # Probe the LIVE process before writing a single row. This blocks a stale
+    # Kev-9B process being silently mislabeled as Kev-4B after a failed restart.
+    model_identity = probe_model_identity(base_url, model_label)
     cases = read_cases(cases_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     previous = read_rows(output_path)
-    completed = {(r["id"], r["model_label"], r["input_sha256"]) for r in previous}
+    # Only previously attested rows count as complete. Historical unverified
+    # decisions are re-evaluated, rather than silently treated as a valid pair.
+    completed = {(r["id"], r["model_label"], r["input_sha256"]) for r in previous
+                 if r.get("server_identity", {}).get("checkpoint_run") == model_identity["checkpoint_run"]
+                 and r.get("server_identity", {}).get("verified") is True}
     new_successes = 0
     for case in cases:
         identity = (case["id"], model_label, case["input_sha256"])
@@ -76,6 +124,7 @@ def collect_decisions(cases_path: Path, output_path: Path, model_label: str, *,
         row = {
             "id": case["id"],
             "model_label": model_label,
+            "server_identity": model_identity,
             "input_sha256": case["input_sha256"],
             "task_type": case["task_type"],
             "log_status": case.get("log_status"),
@@ -95,8 +144,9 @@ def collect_decisions(cases_path: Path, output_path: Path, model_label: str, *,
         new_successes += status == "proposed"
         print(f"{model_label} {case['id']}: {status} "
               f"{result.get('tier') if result else '(no decision)'}")
-    return {"model_label": model_label, "cases": len(cases),
-            "new_successes": new_successes, "output": str(output_path)}
+    return {"model_label": model_label, "server_identity": model_identity,
+            "cases": len(cases), "new_successes": new_successes,
+            "output": str(output_path)}
 
 
 def _mean_or_none(values: list[float]) -> float | None:
@@ -112,6 +162,10 @@ def compare_decisions(cases: list[dict], result_rows: list[dict]) -> dict:
             continue
         if row.get("input_sha256") != inputs[row["id"]]:
             continue  # never silently pair different inputs
+        expected_run = "jaredpalmer/" + label
+        if (row.get("server_identity", {}).get("checkpoint_run") != expected_run
+                or row.get("server_identity", {}).get("verified") is not True):
+            continue  # old/unattested/mislabeled records are not valid comparison evidence
         latest[(row["id"], label)] = row
     summaries = {}
     project_by_id = {c["id"]: c["id"].rsplit("-", 1)[0] for c in cases}
@@ -168,8 +222,26 @@ def compare_decisions(cases: list[dict], result_rows: list[dict]) -> dict:
             "n_raw_disagreement": sum(r["kev4_raw"] != r["kev9_raw"] for r in matching),
             "n_final_disagreement": sum(r["kev4_final"] != r["kev9_final"] for r in matching),
         }
+    exact_pmax = sum(r["kev4_pmax"] == r["kev9_pmax"] for r in paired)
+    vectors_equal = sum(
+        latest[(r["id"], MODEL_LABELS[0])]["decision"].get("probabilities")
+        == latest[(r["id"], MODEL_LABELS[1])]["decision"].get("probabilities")
+        for r in paired
+    )
     return {
         "evaluation": "paired_actual_buggy_source_routing_exploration",
+        "identity_attestation_required": True,
+        "model_identity_verified_counts": {
+            label: sum(1 for r in latest.values() if r.get("model_label") == label)
+            for label in MODEL_LABELS
+        },
+        "exact_pmax_match_count": exact_pmax,
+        "exact_probability_vector_match_count": vectors_equal,
+        "probability_vector_identity_warning": (
+            "Every paired case has the exact same probability vector. "
+            "Check independent checkpoint provenance, routing prompt and caching."
+            if paired and vectors_equal == len(paired) else None
+        ),
         "context_mode_distribution": dict(contexts),
         "project_case_counts": dict(sorted(projects.items())),
         "per_project_comparison": per_project,
@@ -195,6 +267,7 @@ def compare_decisions(cases: list[dict], result_rows: list[dict]) -> dict:
              "Missing failure logs and issue descriptions still prevent task success scoring."),
             "No independent correctness labels or target LLM success/failure. Choice agreement and confidence are NOT routing accuracy.",
             "Speed comparisons may be affected by warm-up, CUDA state and caching; repeat randomized runs before claims.",
+            "Only independently attested /v1/models.run identities are counted; legacy unverified rows are ignored.",
         ],
     }
 
