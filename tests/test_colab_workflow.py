@@ -67,6 +67,23 @@ class ColabPersistenceTests(unittest.TestCase):
         _, finish = self._cell('archive_path = shutil.make_archive(str(root / "kev_gpu_results")')
         self.assertIn('"bugsinpy_sample_manifest.json"', finish)
 
+    def test_reused_colab_kernel_refreshes_stale_bugsinpy_modules(self):
+        _, cases = self._cell('BUGSINPY_TARGET_SUCCESSFUL_CASES = 100')
+        self.assertIn('subprocess.run(["git", "-C", str(ROOT), "pull", "--ff-only"]', cases)
+        self.assertIn('importlib.invalidate_caches()', cases)
+        self.assertIn('importlib.reload(sys.modules[_mod])', cases)
+        self.assertIn('inspect.signature(collect_cases).parameters', cases)
+        self.assertIn('inspect.getfile(collect_cases)', cases)
+        self.assertIn('{"context_mode", "target_successes", "failure_log", "checkpoint_callback"}', cases)
+        self.assertLess(
+            cases.index('importlib.reload(sys.modules[_mod])'),
+            cases.index('from adaptive_llm_router.bugsinpy_cases import collect_cases'),
+        )
+        self.assertLess(
+            cases.index('inspect.signature(collect_cases).parameters'),
+            cases.index('collection = collect_cases('),
+        )
+
     def test_all_code_cells_compile(self):
         for idx, cell in enumerate(self.cells):
             if cell["cell_type"] == "code":
