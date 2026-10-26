@@ -84,6 +84,16 @@ class ColabPersistenceTests(unittest.TestCase):
             cases.index('collection = collect_cases('),
         )
 
+    def test_live_kev_checkpoint_is_attested_before_comparing_models(self):
+        _, cases = self._cell('BUGSINPY_TARGET_SUCCESSFUL_CASES = 100')
+        _, switch = self._cell('result4 = collect_decisions(CASE_PATH, DECISIONS_PATH, "kev-4b@v1.0"')
+        _, finalize = self._cell('archive_path = shutil.make_archive(str(root / "kev_gpu_results")')
+        self.assertIn('MODEL_ATTESTATIONS_PATH = OUTPUTS / "bugsinpy_model_attestations.json"', cases)
+        self.assertIn('result9["server_identity"]', cases)
+        self.assertIn('result4["server_identity"]', switch)
+        self.assertIn('comparison["exact_probability_vector_match_count"]', switch)
+        self.assertIn('"bugsinpy_model_attestations.json"', finalize)
+
     def test_all_code_cells_compile(self):
         for idx, cell in enumerate(self.cells):
             if cell["cell_type"] == "code":

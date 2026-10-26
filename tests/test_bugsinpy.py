@@ -14,7 +14,8 @@ from adaptive_llm_router.bugsinpy_cases import (
     parse_info,
 )
 from adaptive_llm_router.bugsinpy_compare import (
-    collect_decisions, compare_decisions, read_cases, read_rows,
+    collect_decisions, compare_decisions, read_cases, read_rows, KevModelMismatch,
+    probe_model_identity,
 )
 
 
@@ -147,8 +148,12 @@ class BugsInPyTests(unittest.TestCase):
                 "p_max": 0.75,
                 "decision_latency_ms": 20.5,
             })
-        with patch("adaptive_llm_router.bugsinpy_compare.select_analysis_model",
-                   side_effect=mock_selector) as mocked:
+        def correct_identity(_, label):
+            return {"checkpoint_run": "jaredpalmer/" + label, "verified": True}
+        with patch("adaptive_llm_router.bugsinpy_compare.probe_model_identity",
+                   side_effect=correct_identity), patch(
+                       "adaptive_llm_router.bugsinpy_compare.select_analysis_model",
+                       side_effect=mock_selector) as mocked:
             for label in ("kev-9b@v1.0", "kev-4b@v1.0"):
                 collect_decisions(inp, out, label)
                 collect_decisions(inp, out, label)
@@ -158,15 +163,64 @@ class BugsInPyTests(unittest.TestCase):
         self.assertEqual(report["raw_agreement_rate"], 1.0)
         self.assertNotIn("accuracy", report)
         self.assertIn("oracle", report["warnings"][1])
+        self.assertEqual(report["exact_probability_vector_match_count"], 1)
+        self.assertIsNotNone(report["probability_vector_identity_warning"])
 
     def test_no_pair_when_input_fingerprint_mismatched(self):
         case = {"id": "one", "source": "BugsInPy", "task_type": "code",
                 "input": "real code", "input_sha256": "expected"}
         row = {"id": "one", "model_label": "kev-9b@v1.0", "input_sha256": "other",
+               "server_identity": {"checkpoint_run": "jaredpalmer/kev-9b@v1.0", "verified": True},
                "status": "proposed", "decision": {"tier": "l1"}}
         report = compare_decisions([case], [row])
         self.assertEqual(report["n_paired"], 0)
         self.assertIsNone(report["raw_agreement_rate"])
+
+    def test_wrong_running_checkpoint_is_fatal(self):
+        from io import BytesIO
+        wrong = json.dumps({"models": [{"name": "kev-latest",
+                                        "run": "jaredpalmer/kev-9b@v1.0"}]}).encode()
+        with patch("adaptive_llm_router.bugsinpy_compare.urlopen",
+                   return_value=BytesIO(wrong)):
+            with self.assertRaises(KevModelMismatch):
+                probe_model_identity("http://127.0.0.1:8009", "kev-4b@v1.0")
+
+    def test_probe_accepts_real_checkpoint_run_not_model_alias(self):
+        from io import BytesIO
+        response = json.dumps({"models": [
+            {"name": "kev-latest", "run": "jaredpalmer/kev-9b@v1.0",
+             "device": "cuda", "base": "qwen", "backend": "torch"}]}).encode()
+        with patch("adaptive_llm_router.bugsinpy_compare.urlopen",
+                   return_value=BytesIO(response)):
+            proof = probe_model_identity("http://127.0.0.1:8009", "kev-9b@v1.0")
+        self.assertEqual(proof["checkpoint_run"], "jaredpalmer/kev-9b@v1.0")
+        self.assertEqual(proof["verified_from"], "/v1/models.run")
+        self.assertTrue(proof["verified"])
+
+    def test_legacy_unattested_results_do_not_count_as_paired(self):
+        cases = [{"id": "case-1", "input_sha256": "abc", "context_mode": "test_only"}]
+        rows = []
+        for model in ("kev-4b@v1.0", "kev-9b@v1.0"):
+            rows.append({"id": "case-1", "model_label": model,
+                         "input_sha256": "abc", "status": "proposed",
+                         "decision": {"tier": "l2", "proposed_tier": "l2",
+                                      "p_max": .6}})
+        report = compare_decisions(cases, rows)
+        self.assertEqual(report["n_paired"], 0)
+        self.assertEqual(report["models"]["kev-4b@v1.0"]["n_recorded"], 0)
+        self.assertTrue(report["identity_attestation_required"])
+
+    def test_wrong_server_never_records_decisions(self):
+        cases = [{"id": "one", "source": "BugsInPy", "task_type": "code",
+                  "input": "buggy case", "input_sha256": "hash"}]
+        inp = self.root / "cases.jsonl"
+        out = self.root / "decisions.jsonl"
+        inp.write_text(json.dumps(cases[0]) + "\n")
+        with patch("adaptive_llm_router.bugsinpy_compare.probe_model_identity",
+                   side_effect=KevModelMismatch("wrong server")):
+            with self.assertRaises(KevModelMismatch):
+                collect_decisions(inp, out, "kev-4b@v1.0")
+        self.assertFalse(out.exists())
 
     def test_failures_are_not_fabricated_l3_success(self):
         case = {"id": "one", "source": "BugsInPy", "task_type": "code",
@@ -174,8 +228,11 @@ class BugsInPyTests(unittest.TestCase):
         inp = self.root / "cases.jsonl"
         inp.write_text(json.dumps(case) + "\n")
         out = self.root / "decisions.jsonl"
-        with patch("adaptive_llm_router.bugsinpy_compare.select_analysis_model",
-                   side_effect=RuntimeError("server down")):
+        with patch("adaptive_llm_router.bugsinpy_compare.probe_model_identity",
+                   return_value={"checkpoint_run": "jaredpalmer/kev-9b@v1.0",
+                                 "verified": True}), patch(
+                       "adaptive_llm_router.bugsinpy_compare.select_analysis_model",
+                       side_effect=RuntimeError("server down")):
             collect_decisions(inp, out, "kev-9b@v1.0")
         saved = read_rows(out)
         self.assertEqual(saved[0]["status"], "failed")
