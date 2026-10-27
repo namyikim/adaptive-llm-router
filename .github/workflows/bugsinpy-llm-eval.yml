@@ -48,7 +48,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Fail closed on inconsistent paid/model/test configuration
+      - name: Validate paid opt-in, separate model IDs and secret (no API calls)
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
@@ -58,10 +58,29 @@ jobs:
             exit 1
           fi
           if [ "$PAID_ALLOWED" = "true" ]; then
-            if [ -z "${ANTHROPIC_API_KEY:-}" ] || [ -z "$L2_MODEL" ] || [ -z "$L3_MODEL" ] || [ "$L2_MODEL" = "$L3_MODEL" ]; then
-              echo "::error::Paid mode needs ANTHROPIC_API_KEY secret and distinct explicit model IDs."
+            errors=0
+            if [ -z "$L2_MODEL" ]; then
+              echo "::error title=Missing l2_model::Enter an explicit supported L2 model ID in the Run workflow form (example: claude-sonnet-5-5)."
+              errors=1
+            fi
+            if [ -z "$L3_MODEL" ]; then
+              echo "::error title=Missing l3_model::Enter an explicit supported L3 model ID in the Run workflow form (example: claude-opus-5-5)."
+              errors=1
+            fi
+            if [ -n "$L2_MODEL" ] && [ "$L2_MODEL" = "$L3_MODEL" ]; then
+              echo "::error title=Same model ID::L2 and L3 require distinct model IDs."
+              errors=1
+            fi
+            if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+              echo "::error title=Missing GitHub secret::Add ANTHROPIC_API_KEY under Settings > Secrets and variables > Actions > Repository secrets. Never paste API keys in the workflow form."
+              errors=1
+            fi
+            if [ "$errors" != "0" ]; then
+              echo "::notice::Nothing was billed; no provider request was attempted."
               exit 1
             fi
+          else
+            echo "::notice::Free dry-run mode: no Anthropic API requests or Docker patch tests."
           fi
       - name: Clone public BugsInPy metadata without running its setup.sh
         run: |
