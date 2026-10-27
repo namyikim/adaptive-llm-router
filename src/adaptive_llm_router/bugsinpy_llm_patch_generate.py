@@ -13,6 +13,32 @@ from .bugsinpy_reproduce import EXPECTED_COMMITS, ReplayError
 
 PILOT = ("tqdm-6", "tornado-6")
 
+def selected_buggy_excerpt(source: str, case_id: str) -> str:
+    """Preserve relevant production methods beyond the first 18k characters.
+
+    Source is only ever read from the pinned buggy checkout; no fixed file is
+    accessed. The selection heuristic is a documented task-location hint.
+    """
+    if len(source) <= 18000:
+        return source
+    keywords = (
+        ("def __len__", "def __iter__", "def __init__")
+        if case_id == "tqdm-6"
+        else ("def close(", "class AsyncIOLoop", "class BaseAsyncIOLoop",
+              "def initialize(", "def _handle_events(", "def clear_current(")
+    )
+    excerpts = [source[:2200]]
+    for word in keywords:
+        idx = source.find(word)
+        if idx < 0:
+            continue
+        start = max(0, idx - 400)
+        end = min(len(source), idx + 2500)
+        excerpts.append(source[start:end])
+    excerpts.append(source[-1500:])
+    return "\n\n# ... historical buggy source excerpt omitted ...\n\n".join(excerpts)[:18000]
+
+
 def prepare(case_id: str, buggy_root: Path, failure: str) -> dict:
     if case_id not in PILOT or not 3 <= len(failure) <= 6000:
         raise ValueError("Unapproved case or invalid failure description")
@@ -26,7 +52,7 @@ def prepare(case_id: str, buggy_root: Path, failure: str) -> dict:
         path = buggy_root / name
         if not path.is_file() or path.is_symlink():
             raise ReplayError("Missing or unsafe implementation source")
-        sections.append("File: " + name + "\n" + path.read_text(encoding="utf-8")[:18000])
+        sections.append("File: " + name + "\n" + selected_buggy_excerpt(\n            path.read_text(encoding="utf-8"), case_id))
     prompt = (
         "Fix the historical Python bug. Return ONLY a Git unified diff, with "
         "diff --git, --- and +++ file headers, and @@ hunks. Do not modify tests "
