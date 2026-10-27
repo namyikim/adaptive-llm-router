@@ -207,10 +207,6 @@ def classify_test_output(exit_code: int, output: str) -> str:
     """
     if exit_code == 0:
         return "pass"
-    # unittest substitutes _FailedTest when its target class or method cannot
-    # be imported/resolved. This is collection failure, not a reproduced bug.
-    if re.search(r"unittest\\.loader\\._FailedTest|^ERROR:\\s+_FailedTest\\b", output, re.M):
-        return "test_not_collected"
     # unittest synthesizes a _FailedTest when a requested class/method does
     # not exist. The body of the test never ran: NOT a historical failure.
     if (re.search(r"^ERROR:\s+[^\n]+\(unittest\.loader\._FailedTest\)", output, re.M)
