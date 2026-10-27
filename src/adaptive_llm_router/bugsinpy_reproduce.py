@@ -221,14 +221,22 @@ def classify_test_output(exit_code: int, output: str) -> str:
     """
     if exit_code == 0:
         return "pass"
-    # unittest synthesizes a _FailedTest when a requested class/method does
-    # not exist. The body of the test never ran: NOT a historical failure.
-    if (re.search(r"^ERROR:\s+[^\n]+\(unittest\.loader\._FailedTest\)", output, re.M)
-            and re.search(
-                r"^AttributeError:\s+module\s+['\"][^'\"]+['\"]"
-                r"\s+has no attribute\s+['\"][^'\"]+['\"]",
-                output, re.M,
-            )):
+    # unittest synthesizes _FailedTest both when an entire test CLASS is
+    # absent (Tornado-6) and when the class exists but its test METHOD was
+    # added only in the fixed commit (Tornado-5/11/14).
+    # In both cases the body never ran: not an actual bug failure.
+    # A _FailedTest with ModuleNotFoundError is still an environment failure.
+    has_loader_placeholder = re.search(
+        r"^ERROR:\s+[^\n]+\(unittest\.loader\._FailedTest\)", output, re.M,
+    )
+    missing_test_target = re.search(
+        r"^AttributeError:\s+(?:"
+        r"module\s+['\"][^'\"]+['\"]\s+has no attribute\s+['\"][^'\"]+['\"]"
+        r"|type object\s+['\"][^'\"]+['\"]\s+has no attribute\s+['\"]test_[^'\"]+['\"]"
+        r")\s*$",
+        output, re.M,
+    )
+    if has_loader_placeholder and missing_test_target:
         return "test_not_collected"
     if re.search(
         r"(?:^ERROR:\s*not found:|^collected 0 items\b|^no tests ran\b)",
