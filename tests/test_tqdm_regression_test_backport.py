@@ -36,7 +36,8 @@ class BackportTests(unittest.TestCase):
         )
 
     def test_backport_mounts_single_test_file_read_only(self):
-        f = self.root / "tests_synchronisation.py"
+        f = self.root / "tqdm/tests/tests_synchronisation.py"
+        f.parent.mkdir(parents=True)
         f.write_text("def test_imap(): assert False")
         p = subprocess.CompletedProcess([], 1, stdout="FAILED x\nAssertionError")
         with patch("adaptive_llm_router.bugsinpy_reproduce.subprocess.run",
