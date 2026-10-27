@@ -1,0 +1,70 @@
+name: BugsInPy historical test reproduction (manual, isolated)
+on:
+  workflow_dispatch:
+    inputs:
+      case_id:
+        description: 'Historical public bug to reproduce'
+        type: choice
+        options:
+          - tqdm-6
+          - tornado-6
+          - all
+        default: tqdm-6
+      execute:
+        description: 'Opt-in: build Python Docker images and run third-party historical tests'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      CASE_ID: ${{ inputs.case_id }}
+      EXECUTE: ${{ inputs.execute }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Clone public BugsInPy metadata (never run its setup.sh)
+        run: |
+          git clone --depth 1 --quiet https://github.com/soarsmu/BugsInPy.git /tmp/bugsinpy-public
+      - name: Build reviewed legacy images only when explicitly opted in
+        if: ${{ inputs.execute }}
+        run: |
+          set -euo pipefail
+          if [ "$CASE_ID" = "tqdm-6" ] || [ "$CASE_ID" = "all" ]; then
+            docker build --pull -f docker/bugsinpy-py36.Dockerfile -t adaptive-bugsinpy:py36 .
+          fi
+          if [ "$CASE_ID" = "tornado-6" ] || [ "$CASE_ID" = "all" ]; then
+            docker build --pull -f docker/bugsinpy-py37.Dockerfile -t adaptive-bugsinpy:py37 .
+          fi
+      - name: Prepare manifest or reproduce in network-isolated Docker containers
+        run: |
+          set -euo pipefail
+          if [ "$CASE_ID" = "all" ]; then
+            CASE_ARGS=(all)
+          else
+            CASE_ARGS=("$CASE_ID")
+          fi
+          RUN_ARGS=()
+          if [ "$EXECUTE" = "true" ]; then
+            RUN_ARGS=(--execute)
+          fi
+          PYTHONPATH=src python -m adaptive_llm_router.bugsinpy_reproduce \
+            --dataset-root /tmp/bugsinpy-public \
+            --workspace /tmp/bugsinpy-replay-workspace \
+            --output-root outputs/reproduction \
+            --cases "${CASE_ARGS[@]}" "${RUN_ARGS[@]}"
+      - name: Upload reproduction evidence and failure statuses
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bugsinpy-reproduction-${{ github.run_id }}
+          path: outputs/reproduction/
+          if-no-files-found: warn
+          retention-days: 14
