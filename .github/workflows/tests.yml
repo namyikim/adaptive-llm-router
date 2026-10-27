@@ -12,6 +12,19 @@ jobs:
           python-version: '3.11'
       - name: Run unit tests without downloading models
         run: python -m unittest discover -s tests -v
+      - name: Smoke-test no-API L2/L3 task export and no-execute patch default
+        run: |
+          PYTHONPATH=src python -m adaptive_llm_router.bugsinpy_blind_tasks \
+            --source-audit benchmarks/data/bugsinpy_six_historical_reproductions.json \
+            --output /tmp/bugsinpy-l2-l3-tasks.jsonl
+          PYTHONPATH=src python -m adaptive_llm_router.bugsinpy_patch_verifier \
+            --dataset-root /tmp/unused --workspace /tmp/unused \
+            --output-root /tmp/bugsinpy-l2-l3-evaluation \
+            --case-id tornado-7 --tier l2 --model-id pending-model
+          PYTHONPATH=src python -m adaptive_llm_router.bugsinpy_patch_compare \
+            --input-dir /tmp/bugsinpy-l2-l3-evaluation \
+            --output /tmp/bugsinpy-l2-l3-evaluation/comparison.json
+          python -c 'import json; p="/tmp/bugsinpy-l2-l3-evaluation/comparison.json"; d=json.load(open(p)); assert d["n_complete_pairs"] == 0 and d["overall_six_case_success_rates"] is None'
       - name: Validate pinned BugsInPy metadata in safe dry-run mode
         run: |
           git clone --depth 1 --quiet https://github.com/soarsmu/BugsInPy.git /tmp/bugsinpy-metadata

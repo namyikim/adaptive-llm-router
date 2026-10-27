@@ -152,6 +152,16 @@ The previous BugsInPy 100-case experiment produced **100/100 identical probabili
 
 The earlier 100-case run gave identical 4B/9B tier distributions (95×L2, 5×L3) and identical rounded mean pmax (0.5533). These two equal means alone do not show that every probability vector was equal; and **legacy model labels are not proof of which weights served the request**. Only new runs after PR #10 record live checkpoint identity. See [audit methodology](docs/legacy-kev-result-audit.md).
 
+## New: independently verify actual L2 versus L3 bug-fix patches (no paid API by default)
+
+The six independently reproduced BugsInPy cases now have an **offline candidate-patch evaluator**. Generate identical fix-free L2/L3 input prompts, have independently chosen models each provide a real unified diff, then verify each patch against the same regression tests in isolated Docker. The candidate input **never includes the fixed implementation or fixed-commit verifier tests**.
+
+- [Workflow: manual L2/L3 patch verification](.github/workflows/bugsinpy-patch-evaluation.yml) — `execute=false` by default, no paid LLM calls. Actual verification requires a submitted patch, exact model ID, and explicit opt-in.
+- [Experiment guide & patch file paths](docs/bugsinpy-l2-l3-patch-evaluation.md)
+- New CPU-only modules: `bugsinpy_blind_tasks`, `bugsinpy_patch_verifier`, `bugsinpy_patch_compare`.
+
+**Not yet measured:** L2/L3 repair success, full-suite correctness, routing accuracy, and model monetary savings. Missing patches are never treated as real outcomes, and only complete verified L2/L3 pairs are comparable.
+
 ## Verified historical debugging benchmark foundation — six cases (October 27)
 
 The six Kev-4B L2 versus Kev-9B L3 divergent BugsInPy cases now have **individually inspected buggy-fails/fixed-passes test logs**: `tqdm-6` and Tornado `5/6/7/11/14`. The current authoritative four-Tornado replay is [GitHub Actions #40438878278](https://github.com/namyikim/adaptive-llm-router/actions/runs/40438878278). Earlier false-positive/non-collected tests were **not** included. One prior tqdm report was a documented parser false-negative; its raw failure and fixed-pass logs remain the evidence.
