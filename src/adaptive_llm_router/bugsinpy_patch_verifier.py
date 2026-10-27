@@ -153,6 +153,8 @@ def verify_patch(*, dataset_root: Path, workspace: Path, output_root: Path,
         raise ValueError("Selected case/tier is not on the allowlist")
     if not isinstance(model_id, str) or not model_id.strip() or len(model_id) > 128:
         raise ValueError("Explicit, nonblank model_id required")
+    if execute and model_id.strip() == "pending-model":
+        raise ValueError("Real external target-model identity required before testing")
     for name, value in (("model_cost_usd", model_cost_usd),
                         ("model_latency_ms", model_latency_ms)):
         if value is not None and (isinstance(value, bool) or
