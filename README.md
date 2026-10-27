@@ -162,6 +162,10 @@ The six independently reproduced BugsInPy cases now have an **offline candidate-
 
 **Not yet measured:** L2/L3 repair success, full-suite correctness, routing accuracy, and model monetary savings. Missing patches are never treated as real outcomes, and only complete verified L2/L3 pairs are comparable.
 
+## Independent external candidate patch verification (opt-in)
+
+Six historical BugsInPy buggy-vs-fixed failures are now established; **no L2/L3 LLM-generated patches have been measured yet**. The new CPU-only [candidate-patch verifier](src/adaptive_llm_router/bugsinpy_patch_verify.py) accepts an externally generated unified diff, checks that it modifies only reviewed implementation files, and (only when `--execute` is explicitly supplied) applies it to a disposable buggy checkout copy and runs a pinned **verifier-only regression test** in a network-disabled, resource-capped Docker container. Reports differentiate missing baseline, patch pass, patch failure and inconclusive environment failure; `llm_generated` is never asserted by the tool. Paid API calls are never made by the verifier. See [execution procedure and security constraints](docs/bugsinpy-independent-patch-verification.md).
+
 ## Verified historical debugging benchmark foundation — six cases (October 27)
 
 The six Kev-4B L2 versus Kev-9B L3 divergent BugsInPy cases now have **individually inspected buggy-fails/fixed-passes test logs**: `tqdm-6` and Tornado `5/6/7/11/14`. The current authoritative four-Tornado replay is [GitHub Actions #40438878278](https://github.com/namyikim/adaptive-llm-router/actions/runs/40438878278). Earlier false-positive/non-collected tests were **not** included. One prior tqdm report was a documented parser false-negative; its raw failure and fixed-pass logs remain the evidence.
