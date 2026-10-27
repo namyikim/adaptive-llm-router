@@ -12,3 +12,12 @@ jobs:
           python-version: '3.11'
       - name: Run unit tests without downloading models
         run: python -m unittest discover -s tests -v
+      - name: Validate pinned BugsInPy metadata in safe dry-run mode
+        run: |
+          git clone --depth 1 --quiet https://github.com/soarsmu/BugsInPy.git /tmp/bugsinpy-metadata
+          PYTHONPATH=src python -m adaptive_llm_router.bugsinpy_reproduce \
+            --dataset-root /tmp/bugsinpy-metadata \
+            --workspace /tmp/bugsinpy-never-used-workspace \
+            --output-root /tmp/bugsinpy-metadata-audit \
+            --cases all
+          python -c 'import json; a=json.load(open("/tmp/bugsinpy-metadata-audit/reproduction_summary.json")); assert a["executed"] is False and a["n_cases"] == 6 and a["verified_reproductions"] == 0'

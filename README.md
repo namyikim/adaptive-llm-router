@@ -152,6 +152,14 @@ The previous BugsInPy 100-case experiment produced **100/100 identical probabili
 
 The earlier 100-case run gave identical 4B/9B tier distributions (95×L2, 5×L3) and identical rounded mean pmax (0.5533). These two equal means alone do not show that every probability vector was equal; and **legacy model labels are not proof of which weights served the request**. Only new runs after PR #10 record live checkpoint identity. See [audit methodology](docs/legacy-kev-result-audit.md).
 
+## Next step: reproduce historical failures before measuring LLM fixes
+
+A new **opt-in**, CPU-only, Docker-isolated BugsInPy reproduction pipeline covers the six cases where Kev-4B/9B diverged: `tqdm-6` and Tornado `5/6/7/11/14`. It compares the same allowlisted historical test(s) on buggy and fixed commits. It never runs BugsInPy `setup.sh` or arbitrary shell scripts, and it distinguishes genuine buggy-fail/fixed-pass evidence from missing dependencies, timeouts and inconclusive tests.
+
+**Start with GitHub Actions → [BugsInPy historical test reproduction (manual, isolated)](.github/workflows/bugsinpy-reproduction.yml).** The default action is a **non-executing manifest preview**. To run actual third-party historical tests, explicitly enable `execute=true`; GitHub-hosted Docker containers have no runtime network, drop capabilities, use read-only sources and bound CPU/memory/time. Download the Actions artifact to see each case's verification status and logs.
+
+This is **not yet model repair-success measurement**: the historical fixed commit is an independent control, not a model-generated patch. The output keeps `llm_verified_success=null`. See [full methodology and local Docker instructions](docs/bugsinpy-isolated-reproduction.md).
+
 ## Large-scale BugsInPy paired Kev-4B / Kev-9B exploratory experiment
 
 **Colab Run All now targets 100 successfully extracted historical test contexts** from 12 public Python projects, sampled with deterministic seed 20261026 using capped, project-round-robin candidate selection. It uses test sources at historical buggy commits and does not consult the fixing diff by default. Unlike the earlier 6-case oracle-assisted pilot, the default `test_only` context mode does not include fixed-file locations; the affected test path is still a metadata hint and no failures are reproduced.
