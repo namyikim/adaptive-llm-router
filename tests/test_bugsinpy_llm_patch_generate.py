@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from adaptive_llm_router.bugsinpy_llm_patch_generate import prepare, extract_patch, main
+from adaptive_llm_router.bugsinpy_llm_patch_generate import prepare, extract_patch, main, selected_buggy_excerpt
 from adaptive_llm_router.bugsinpy_reproduce import EXPECTED_COMMITS, ReplayError
 
 class PatchPromptTests(unittest.TestCase):
@@ -42,6 +42,13 @@ class PatchPromptTests(unittest.TestCase):
             extract_patch("I solved it, trust me","tqdm-6")
         with self.assertRaises(ReplayError):
             extract_patch(good.replace("tqdm/_tqdm.py","tqdm/tests/test.py"),"tqdm-6")
+
+    def test_buggy_source_excerpt_reaches_relevant_method_after_prefix(self):
+        long_buggy = "import os\n" + "x = 1\n" * 4300 + "def __len__(self):\n    return self.total\n"
+        selected = selected_buggy_excerpt(long_buggy, "tqdm-6")
+        self.assertIn("def __len__", selected)
+        self.assertIn("return self.total", selected)
+        self.assertLessEqual(len(selected), 18000)
 
     def test_cli_dry_run_never_calls_paid_api(self):
         out=self.root/"result"

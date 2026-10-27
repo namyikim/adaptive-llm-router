@@ -34,3 +34,12 @@ jobs:
             --output-root /tmp/bugsinpy-metadata-audit \
             --cases all
           python -c 'import json; a=json.load(open("/tmp/bugsinpy-metadata-audit/reproduction_summary.json")); assert a["executed"] is False and a["n_cases"] == 6 and a["verified_reproductions"] == 0'
+      - name: Smoke-test full BugsInPy L2/L3 pipeline without paying or executing historical code
+        run: |
+          PYTHONPATH=src python -m adaptive_llm_router.bugsinpy_eval_pipeline \
+            --case-id tqdm-6 \
+            --dataset-root /tmp/bugsinpy-metadata \
+            --workspace /tmp/bugsinpy-e2e-cpu-smoke \
+            --evidence-file benchmarks/data/bugsinpy_six_historical_reproductions.json \
+            --output-root /tmp/bugsinpy-e2e-cpu-results
+          python -c 'import json; d=json.load(open("/tmp/bugsinpy-e2e-cpu-results/e2e_summary.json")); assert d["status"]=="dry_run_no_api_no_patch_tests" and d["comparison"]["status"]=="not_measured" and not d["paid_api_enabled"]'
