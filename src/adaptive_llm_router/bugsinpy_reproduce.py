@@ -207,6 +207,15 @@ def classify_test_output(exit_code: int, output: str) -> str:
     """
     if exit_code == 0:
         return "pass"
+    # unittest synthesizes a _FailedTest when a requested class/method does
+    # not exist. The body of the test never ran: NOT a historical failure.
+    if (re.search(r"^ERROR:\\s+[^\\n]+\\(unittest\\.loader\\._FailedTest\\)", output, re.M)
+            and re.search(
+                r"^AttributeError:\\s+module\\s+['\\\"][^'\\\"]+['\\\"]"
+                r"\\s+has no attribute\\s+['\\\"][^'\\\"]+['\\\"]",
+                output, re.M,
+            )):
+        return "test_not_collected"
     if re.search(
         r"(?:^ERROR:\s*not found:|^collected 0 items\b|^no tests ran\b)",
         output, re.I | re.M,
@@ -235,8 +244,8 @@ def docker_test(image: str, source_root: Path, command: list[str],
                 regression_test_from_fixed: Path | None = None) -> dict:
     """Run one allowlisted test; optionally bind-mount a fixed-commit TEST file.
 
-    This does not copy the fixed implementation patch. Used only for the
-    reviewed tqdm-6 case where test_imap was first ADDED in the fixing commit.
+    Does not copy implementation patches. Only the pinned tqdm-6 and
+    tornado-6 cases have approved fixed-commit regression-test overlays.
     """
     args = [
         "docker", "run", "--rm", "--pull=never",
@@ -250,13 +259,19 @@ def docker_test(image: str, source_root: Path, command: list[str],
         "--env", "PYTHONPATH=/src:/src/tqdm:/src/tqdm/tests",
     ]
     if regression_test_from_fixed is not None:
-        if (not regression_test_from_fixed.is_file()
-                or regression_test_from_fixed.name != "tests_synchronisation.py"):
+        allowed_test_files = {
+            "tests_synchronisation.py": "tqdm/tests/tests_synchronisation.py",
+            "asyncio_test.py": "tornado/test/asyncio_test.py",
+        }
+        relative_test_file = allowed_test_files.get(regression_test_from_fixed.name)
+        if (not regression_test_from_fixed.is_file() or relative_test_file is None
+                or not str(regression_test_from_fixed.resolve()).endswith(
+                    "/" + relative_test_file)):
             raise ReplayError("Refusing unreviewed regression test overlay")
         args += [
             "--mount",
             f"type=bind,src={regression_test_from_fixed.resolve()},"
-            "dst=/src/tqdm/tests/tests_synchronisation.py,readonly",
+            f"dst=/src/{relative_test_file},readonly",
         ]
     args += [image, *command]
     started = time.monotonic()
@@ -318,25 +333,36 @@ def run_one(record: dict, workspace: Path, output_root: Path) -> dict:
             rows = []
             for i, command in enumerate(record["test_commands"]):
                 row = docker_test(record["docker_image"], sources[version], command)
-                if (case_id == "tqdm-6" and version == "buggy"
+                backportable_test_files = {
+                    "tqdm-6": "tqdm/tests/tests_synchronisation.py",
+                    "tornado-6": "tornado/test/asyncio_test.py",
+                }
+                if (case_id in backportable_test_files and version == "buggy"
                         and row["verdict"] == "test_not_collected"):
-                    # This BugsInPy test was ADDED in the historical fixed
-                    # commit. Mount its test file read-only into buggy checkout
-                    # WITHOUT copying the actual implementation fix.
+                    # Both pinned cases ADD a regression test in the fixed
+                    # commit. Mount only that test file into the buggy checkout,
+                    # never the historical implementation patch.
                     original_log = f"{case_id}_buggy_{i + 1}_missing_test.log"
                     (output_root / original_log).write_text(
                         row.pop("output"), encoding="utf-8")
-                    test_from_fixed = sources["fixed"] / "tqdm/tests/tests_synchronisation.py"
-                    result["regression_test_backport"] = {
+                    fixed_test_file = backportable_test_files[case_id]
+                    test_from_fixed = sources["fixed"] / fixed_test_file
+                    backport = result.setdefault("regression_test_backport", {
                         "provenance": "historical_fixed_commit_test_file_for_verifier_only",
                         "no_implementation_patch_copied": True,
-                        "fixed_test_file": "tqdm/tests/tests_synchronisation.py",
+                        "fixed_test_file": fixed_test_file,
                         "missing_test_log": original_log,
                         "test_sha256": (
                             hashlib.sha256(test_from_fixed.read_bytes()).hexdigest()
                             if test_from_fixed.is_file() else None
                         ),
-                    }
+                        "attempts": [],
+                    })
+                    backport["attempts"].append({
+                        "test_command_index": i + 1,
+                        "original_verdict": row["verdict"],
+                        "missing_test_log": original_log,
+                    })
                     if test_from_fixed.is_file():
                         row = docker_test(
                             record["docker_image"], sources[version], command,
