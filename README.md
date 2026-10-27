@@ -162,6 +162,12 @@ The six independently reproduced BugsInPy cases now have an **offline candidate-
 
 **Not yet measured:** L2/L3 repair success, full-suite correctness, routing accuracy, and model monetary savings. Missing patches are never treated as real outcomes, and only complete verified L2/L3 pairs are comparable.
 
+## Paired L2 vs L3 candidate repair trial (manual paid opt-in)
+
+After establishing six historical BugsInPy reproductions and the independent patch verifier, the new [manual GitHub Actions paired repair trial](.github/workflows/bugsinpy-llm-repair-trial.yml) can call the **configured L2 and L3 Claude models once each** with identical buggy-source evidence, extract restricted Git diffs, and optionally verify candidate patches in network-disabled Docker. **Default mode performs neither paid calls nor Docker tests**. Paid calls require `allow_paid=true` and an `ANTHROPIC_API_KEY` Actions secret; running untrusted generated patches additionally requires `execute_verifier=true`.
+
+Models see **only buggy source excerpts plus audited failure symptoms**, never official fixed implementations or verifier-only fixed-commit regression test source. Implementation file selection is historically assisted and the experiment is **not a blind benchmark**. Reports keep requested/served model IDs, API token usage, candidate SHA and independently verified outcomes separate. USD costs remain unknown until checked against actual provider billing. [Pilot instructions and limitations](docs/bugsinpy-l2-l3-repair-trial.md).
+
 ## Independent external candidate patch verification (opt-in)
 
 Six historical BugsInPy buggy-vs-fixed failures are now established; **no L2/L3 LLM-generated patches have been measured yet**. The new CPU-only [candidate-patch verifier](src/adaptive_llm_router/bugsinpy_patch_verify.py) accepts an externally generated unified diff, checks that it modifies only reviewed implementation files, and (only when `--execute` is explicitly supplied) applies it to a disposable buggy checkout copy and runs a pinned **verifier-only regression test** in a network-disabled, resource-capped Docker container. Reports differentiate missing baseline, patch pass, patch failure and inconclusive environment failure; `llm_generated` is never asserted by the tool. Paid API calls are never made by the verifier. See [execution procedure and security constraints](docs/bugsinpy-independent-patch-verification.md).
