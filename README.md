@@ -152,6 +152,12 @@ The previous BugsInPy 100-case experiment produced **100/100 identical probabili
 
 The earlier 100-case run gave identical 4B/9B tier distributions (95×L2, 5×L3) and identical rounded mean pmax (0.5533). These two equal means alone do not show that every probability vector was equal; and **legacy model labels are not proof of which weights served the request**. Only new runs after PR #10 record live checkpoint identity. See [audit methodology](docs/legacy-kev-result-audit.md).
 
+## Verified historical debugging benchmark foundation — six cases (October 27)
+
+The six Kev-4B L2 versus Kev-9B L3 divergent BugsInPy cases now have **individually inspected buggy-fails/fixed-passes test logs**: `tqdm-6` and Tornado `5/6/7/11/14`. The current authoritative four-Tornado replay is [GitHub Actions #40438878278](https://github.com/namyikim/adaptive-llm-router/actions/runs/40438878278). Earlier false-positive/non-collected tests were **not** included. One prior tqdm report was a documented parser false-negative; its raw failure and fixed-pass logs remain the evidence.
+
+See [six-case audit](docs/bugsinpy-six-verified-historical-cases.md) and [source-run evidence index](benchmarks/data/bugsinpy_six_historical_reproductions.json). The historical fixed-commit regression tests are **verifier-only**, not LLM prompt input. **These are not LLM-generated patch success measurements**, so no L2/L3 repair accuracy or monetary savings can yet be claimed.
+
 ## Next step: reproduce historical failures before measuring LLM fixes
 
 A new **opt-in**, CPU-only, Docker-isolated BugsInPy reproduction pipeline covers the six cases where Kev-4B/9B diverged: `tqdm-6` and Tornado `5/6/7/11/14`. It compares the same allowlisted historical test(s) on buggy and fixed commits. It never runs BugsInPy `setup.sh` or arbitrary shell scripts, and it distinguishes genuine buggy-fail/fixed-pass evidence from missing dependencies, timeouts and inconclusive tests.
