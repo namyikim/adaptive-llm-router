@@ -1,0 +1,122 @@
+name: BugsInPy L2-L3 patch verification (manual, isolated)
+on:
+  workflow_dispatch:
+    inputs:
+      case_id:
+        description: 'One of six independently reproduced public bugs'
+        type: choice
+        options:
+          - tqdm-6
+          - tornado-5
+          - tornado-6
+          - tornado-7
+          - tornado-11
+          - tornado-14
+        required: true
+        default: tqdm-6
+      tier:
+        description: 'Which candidate model generated the patch?'
+        type: choice
+        options:
+          - l2
+          - l3
+        required: true
+        default: l2
+      model_id:
+        description: 'Exact external model ID (not the Kev decision model)'
+        type: string
+        required: true
+        default: pending-model
+      execute:
+        description: 'Opt in to Docker testing of a submitted model patch'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      CASE_ID: ${{ inputs.case_id }}
+      TIER: ${{ inputs.tier }}
+      MODEL_ID: ${{ inputs.model_id }}
+      EXECUTE: ${{ inputs.execute }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Produce identical fix-free L2 and L3 task briefs
+        run: |
+          set -euo pipefail
+          PYTHONPATH=src python -m adaptive_llm_router.bugsinpy_blind_tasks \
+            --source-audit benchmarks/data/bugsinpy_six_historical_reproductions.json \
+            --output outputs/patch_verification/blind_tasks.jsonl
+      - name: Require explicit opt-in and independent model-generated patch
+        run: |
+          set -euo pipefail
+          PATCH_FILE="benchmarks/candidate_patches/$CASE_ID/$TIER.patch"
+          if [ "$EXECUTE" = "true" ]; then
+            if [ "$MODEL_ID" = "pending-model" ] || [ -z "$MODEL_ID" ]; then
+              echo "::error::Real external model ID is required to execute verification."
+              exit 1
+            fi
+            if [ ! -f "$PATCH_FILE" ]; then
+              echo "::error::Missing submitted patch: $PATCH_FILE"
+              echo "::error::Do not fabricate patches or run paid LLMs in the verifier."
+              exit 1
+            fi
+          fi
+      - name: Build pinned legacy image and fetch metadata only after execute opt-in
+        if: ${{ inputs.execute }}
+        run: |
+          set -euo pipefail
+          if [ "$CASE_ID" = "tqdm-6" ]; then
+            docker build --pull -f docker/bugsinpy-py36.Dockerfile -t adaptive-bugsinpy:py36 .
+          else
+            docker build --pull -f docker/bugsinpy-py37.Dockerfile -t adaptive-bugsinpy:py37 .
+          fi
+          git clone --depth 1 --quiet https://github.com/soarsmu/BugsInPy.git /tmp/bugsinpy-patch-metadata
+      - name: Verify candidate patch or save nonexecuting status
+        run: |
+          set -euo pipefail
+          PATCH_FILE="benchmarks/candidate_patches/$CASE_ID/$TIER.patch"
+          ARGS=()
+          if [ "$EXECUTE" = "true" ]; then
+            ARGS=(--execute)
+          fi
+          PYTHONPATH=src python -m adaptive_llm_router.bugsinpy_patch_verifier \
+            --dataset-root /tmp/bugsinpy-patch-metadata \
+            --workspace /tmp/bugsinpy-patch-workspaces \
+            --output-root outputs/patch_verification \
+            --case-id "$CASE_ID" --tier "$TIER" --model-id "$MODEL_ID" \
+            --patch-file "$PATCH_FILE" "${ARGS[@]}"
+      - name: Summarize observed result without imputing success
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path("outputs/patch_verification")
+          lines = ["## Independent L2/L3 patch verification", "",
+                   "A green workflow is NOT itself a passed regression.", ""]
+          for p in sorted(root.glob("*.json")):
+              d = json.loads(p.read_text(encoding="utf-8"))
+              lines.append(f"- {d.get('case_id')} / {d.get('tier')}: "
+                           f"{d.get('status')}, model={d.get('model_id')}, "
+                           f"regression_passed={d.get('regression_passed')}")
+              if d.get("status") != "regression_passed":
+                  print("::warning::No measured regression pass in this report.")
+          lines += ["", "Verifier-only regression test content is never sent to an LLM."]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+              f.write("\n".join(lines) + "\n")
+          PY
+      - name: Upload verification logs and fix-free task briefs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bugsinpy-patch-eval-${{ github.run_id }}
+          path: outputs/patch_verification/
+          retention-days: 14
+          if-no-files-found: warn
