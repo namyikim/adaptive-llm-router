@@ -92,6 +92,21 @@ The new GitHub Actions step summary displays explicit per-case statuses to preve
 
 **현재 상태:** 위 네 건은 실행 코드와 CPU 테스트만 검증됐으며, 실제 Docker 실행 성공 여부는 **아직 확인되지 않았습니다.**
 
+## 2026-10-27 Tornado 남은 4건 — 실행 #40437186598 사후 로그 감사
+
+[GitHub Actions #40437186598](https://github.com/namyikim/adaptive-llm-router/actions/runs/40437186598)는 `case_id=tornado-remaining`, `execute=true`, 커밋 `9e222af`로 실행됐습니다. 자동 생성 `reproduction_summary.json`은 `verified_reproductions=4/4`라고 기록했으나, **개별 Docker 로그를 검토하면 이 중 3건은 테스트 메서드 자체가 없어서 실행되지 않았습니다. 이전 자동 결과는 유효한 재현 성적이 아닙니다.**
+
+| 사례 | 원본 buggy 로그 | 공식 fixed 로그 | 신뢰 가능한 판정 |
+| --- | --- | --- | --- |
+| `tornado-5` | `_FailedTest`: `TestPeriodicCallbackMath`에 `test_clock_backwards` 메서드 없음 | 1건 통과 | **미재현**, 회귀 테스트 파일 검증용 적용 필요 |
+| `tornado-7` | 원본 테스트는 통과, 수정된 회귀 테스트 적용 시 `TypeError: object Future can't be used in 'await' expression` | 1건 통과 | **실제 버그 재현 성공** (검증용 테스트 출처 명시) |
+| `tornado-11` | `_FailedTest`: `HTTPServerRawTest`에 `test_chunked_request_uppercase` 메서드 없음 | 1건 통과 | **미재현**, 회귀 테스트 파일 검증용 적용 필요 |
+| `tornado-14` | `_FailedTest`: `TestIOLoopCurrent`에 `test_force_current` 메서드 없음 | 1건 통과 | **미재현**, 회귀 테스트 파일 검증용 적용 필요 |
+
+오류 원인: 종전 `classify_test_output()` 함수는 `unittest.loader._FailedTest`로 감싼 **테스트 클래스 누락**만 감지했고, `AttributeError: type object 'Class' has no attribute 'test_method'` 형태의 **테스트 메서드 누락**은 `FAILED (errors=1)`을 보고 실제 버그 실패로 오인했습니다. 이에 테스트 수집 실패로 구분하도록 수정하고, 해당 세 사례의 로그 패턴을 CPU 회귀 테스트에 고정했습니다. 이로써 기존에 작성한 **검증용 테스트만 읽기 전용으로 적용하는 경로**가 활성화됩니다.
+
+**원본 실행 아티팩트는 변경하지 않습니다.** 오류 수정 이후 네 건을 다시 실행해, 5·11·14번의 버그 발생 커밋에서도 실제 테스트 본문이 실패하고 fixed 버전이 통과하는지 독립적으로 확인해야 합니다. 테스트 전용 회귀 검증은 원래 문제의 재현을 뜻할 뿐 L2/L3 LLM 수정 성공이나 최적 라우팅을 뜻하지 않습니다.
+
 ## 상태 해석
 
 | status | 의미 |
