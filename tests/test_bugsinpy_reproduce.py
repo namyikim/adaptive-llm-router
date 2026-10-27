@@ -8,7 +8,8 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from adaptive_llm_router.bugsinpy_reproduce import (
-    ALLOWED_CASES, REPRODUCED, ReplayError, prepare_metadata, decode_test_commands,
+    ALLOWED_CASES, REPRODUCED, EXPECTED_COMMITS, EXPECTED_TEST_COMMANDS,
+    ReplayError, prepare_metadata, decode_test_commands,
     classify_reproduction, docker_test, run_one,
 )
 
@@ -28,11 +29,12 @@ class DockerReplayTests(unittest.TestCase):
         bugs = self.root / "projects" / project / "bugs" / bug_id
         bugs.mkdir(parents=True)
         (bugs / "run_test.sh").write_text(script, encoding="utf-8")
+        buggy_sha, fixed_sha = EXPECTED_COMMITS[case_id]
         info = [
             'python_version="3.6.9"' if project == "tqdm"
             else 'python_version="3.7.0"',
-            'buggy_commit_id="' + "a" * 40 + '"',
-            'fixed_commit_id="' + "b" * 40 + '"',
+            'buggy_commit_id="' + buggy_sha + '"',
+            'fixed_commit_id="' + fixed_sha + '"',
             'test_file="tests/test.py"',
         ]
         (bugs / "bug.info").write_text("\n".join(info), encoding="utf-8")
@@ -75,10 +77,24 @@ class DockerReplayTests(unittest.TestCase):
         self.assertEqual(manifest["docker_image"], "adaptive-bugsinpy:py36")
         self.assertEqual(len(manifest["test_commands"]), 1)
         self.assertEqual(manifest["status"], "not_executed")
+        self.assertEqual(manifest["test_commands"], EXPECTED_TEST_COMMANDS["tqdm-6"])
         with self.assertRaises(ValueError):
             prepare_metadata(self.root, "tqdm-99")
         (self.root / "projects/tqdm/project.info").write_text(
             'github_url="https://github.com/attacker/evil"')
+        with self.assertRaises(ReplayError):
+            prepare_metadata(self.root, "tqdm-6")
+
+    def test_modified_record_is_rejected_even_if_syntax_is_safe(self):
+        script = "python3 -m pytest tqdm/tests/tests_synchronisation.py::test_imap"
+        self.seed("tqdm-6", script)
+        path = self.root / "projects/tqdm/bugs/6/bug.info"
+        content = path.read_text()
+        path.write_text(content.replace(EXPECTED_COMMITS["tqdm-6"][0], "c" * 40))
+        with self.assertRaises(ReplayError):
+            prepare_metadata(self.root, "tqdm-6")
+        path.write_text(content)
+        (path.parent / "run_test.sh").write_text("python3 -m pytest alternate.py")
         with self.assertRaises(ReplayError):
             prepare_metadata(self.root, "tqdm-6")
 
