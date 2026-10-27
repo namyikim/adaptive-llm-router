@@ -25,6 +25,16 @@ GitHub Actions 임시 Linux runner에서만 공개 BugsInPy 메타데이터를 c
 
 보안 한계: Python 3.6/3.7 및 해당 Debian 이미지는 지원이 종료된 오래된 환경이므로 일반 업무용 머신이나 장기 실행 서버에서 실행하지 마세요. GitHub-hosted 임시 runner 또는 별도의 격리 머신을 권장합니다. 이는 완전한 보안 경계나 완전 재현성을 보장하지 않습니다.
 
+## 2026-10-27 tqdm-6: regression test added in FIXED commit
+
+An actual `execute=true` run [#40426312505](https://github.com/namyikim/adaptive-llm-router/actions/runs/40426312505) built the legacy Python image and ran both historical commits. It returned `environment_or_timeout` **not because of a model issue or a timeout**, but because `test_imap` did not exist at the buggy commit: pytest exit code 4, `collected 0 items`, `ERROR: not found`. The same test existed in the fixed commit and passed (exit code 0). This is **not a successful buggy-fail/fixed-pass reproduction**.
+
+Git comparison confirms the historical fix added `test_imap` to `tqdm/tests/tests_synchronisation.py` and separately modified the implementation file `tqdm/_tqdm.py`. The replay runner now explicitly identifies missing tests as `test_not_collected`, **not** as bug failures.
+
+For **the pinned `tqdm-6` case only**, if the buggy commit lacks that exact test, the runner executes an additional, clearly labeled *test-only regression backport*: Docker read-only bind-mounts `tqdm/tests/tests_synchronisation.py` from the pinned fixed commit on top of the buggy checkout's test file. It does **not** copy `tqdm/_tqdm.py` or any implementation diff. The original no-test log remains `tqdm-6_buggy_1_missing_test.log` and the backport attempt is stored in `tqdm-6_buggy_1.log`; the case JSON records `regression_test_backport`, test SHA-256, `test_origin=fixed_commit_regression_test_only` and whether the historical buggy-fail/fixed-pass reproduction was confirmed. If the regression-test-only backport still doesn't produce a test assertion failure, status remains inconclusive.
+
+**Leakage restriction:** The backported test comes from the fixing commit, so it is a **verifier-only oracle**. Never expose its code or the fixed implementation as target LLM debugging input, and do not use it for model comparison calibration without explicitly disclosing this test oracle.
+
 ## 상태 해석
 
 | status | 의미 |
@@ -32,6 +42,7 @@ GitHub Actions 임시 Linux runner에서만 공개 BugsInPy 메타데이터를 c
 | `not_executed` | 드라이런; 기록만 만들고 테스트 미실행 |
 | `reproduced_buggy_fail_fixed_pass` | buggy에서 테스트 실패가 확인되고 fixed에서 동일 테스트 모두 통과 |
 | `not_reproduced_both_pass` | 두 버전 모두 관련 테스트 통과 |
+| `test_not_collected` (개별 테스트 verdict) | 해당 커밋에서 테스트를 찾지 못함; 버그 실패로 판정하지 않음 |
 | `inconclusive_tests` | 두 버전 모두 실패하는 등 정답 판정 불가 |
 | `environment_or_timeout` | 의존성·import 문제, 알 수 없는 종료 또는 타임아웃 |
 | `environment_unavailable` | Docker/이미지/커밋 체크아웃 자체가 실패 |
