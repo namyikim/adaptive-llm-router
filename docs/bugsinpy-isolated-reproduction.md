@@ -73,6 +73,25 @@ The classifier now recognizes unittest `_FailedTest` with a missing module attri
 
 The new GitHub Actions step summary displays explicit per-case statuses to prevent confusing the green job icon with a reproduced historical defect. Re-run case `tornado-6`, `execute=true` on updated main before recording any confirmed Tornado-6 reproduction.
 
+## Tornado 남은 4건 — 회귀 테스트 검증 준비
+
+실험 코드가 `tornado-5`, `tornado-7`, `tornado-11`, `tornado-14`도 지원합니다. 네 사례 모두 BugsInPy의 버그/수정 커밋과 테스트 명령이 **SHA 및 명령 allowlist로 고정**돼 있습니다.
+
+| ID | 공식 수정 커밋의 테스트 변경 | 검증 전략 |
+| --- | --- | --- |
+| `tornado-5` | `ioloop_test.py::test_clock_backwards` 추가 | 기존 커밋에서 미수집 시 수정 커밋의 테스트 파일만 검증용으로 사용 |
+| `tornado-7` | `ioloop_test.py::test_run_in_executor_native` 본문 수정 | 기존 테스트 결과를 먼저 보존한 다음 변경된 회귀 테스트로 검증 |
+| `tornado-11` | `httpserver_test.py::test_chunked_request_uppercase` 추가 | 기존 커밋에서 미수집 시 수정 커밋의 테스트 파일만 검증용으로 사용 |
+| `tornado-14` | `ioloop_test.py::test_force_current` 추가 | 기존 커밋에서 미수집 시 수정 커밋의 테스트 파일만 검증용으로 사용 |
+
+새 GitHub Actions 메뉴의 `case_id=tornado-remaining`은 **위 네 건만** 선택합니다. `execute=true`를 명시하면 사용자가 승인한 일회성 GitHub-hosted Docker 실행에서 각각 buggy·fixed 테스트를 돌립니다. `execute=false`(기본값)는 메타데이터 확인만 수행합니다. CUDA/A100이나 LLM API는 필요 없습니다.
+
+결과 아티팩트에는 각 테스트의 원래 실행 로그(`*_missing_test.log` 혹은 `*_revised_test_original.log`), 검증용 테스트를 적용한 재실행 로그, 고정 커밋 해시, 검증용 테스트 SHA-256 및 케이스별 JSON 상태가 포함됩니다.
+
+**누수 방지:** 수정 커밋의 테스트 파일 전체가 검증용으로만 사용됩니다. 테스트 내 설명이나 수정된 테스트 본문이 모델의 디버깅 입력으로 전달돼서는 안 됩니다. 구현 수정 파일은 buggy 실행 컨테이너에 복사하지 않습니다. `reproduced_buggy_fail_fixed_pass`는 실제 buggy 테스트 실패 + fixed 통과가 확인된 경우에만 기록하며, 환경 오류/미수집/타임아웃은 실패 또는 미검증으로 남습니다. 이 작업은 역사적 오류 재현이지 모델의 버그 수정 성공률 평가가 아닙니다.
+
+**현재 상태:** 위 네 건은 실행 코드와 CPU 테스트만 검증됐으며, 실제 Docker 실행 성공 여부는 **아직 확인되지 않았습니다.**
+
 ## 상태 해석
 
 | status | 의미 |
