@@ -1,0 +1,138 @@
+name: BugsInPy L2-vs-L3 patch evaluation (opt-in)
+on:
+  workflow_dispatch:
+    inputs:
+      case_id:
+        description: 'Reviewed historical bug'
+        type: choice
+        options:
+          - tqdm-6
+          - tornado-6
+        default: tqdm-6
+      allow_paid_api:
+        description: 'Explicit opt-in to two billed Anthropic model calls'
+        type: boolean
+        default: false
+      execute_patch_tests:
+        description: 'Opt-in to Docker patch verification (requires paid API)'
+        type: boolean
+        default: false
+      l2_model:
+        description: 'Explicit supported provider model ID for L2 (no default)'
+        type: string
+        default: ''
+      l3_model:
+        description: 'Explicit supported provider model ID for L3 (no default)'
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bugsinpy-llm-${{ github.ref }}-${{ inputs.case_id }}
+  cancel-in-progress: false
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      CASE_ID: ${{ inputs.case_id }}
+      PAID_ALLOWED: ${{ inputs.allow_paid_api }}
+      RUN_PATCH_TESTS: ${{ inputs.execute_patch_tests }}
+      L2_MODEL: ${{ inputs.l2_model }}
+      L3_MODEL: ${{ inputs.l3_model }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Fail closed on inconsistent paid/model/test configuration
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ "$RUN_PATCH_TESTS" = "true" ] && [ "$PAID_ALLOWED" != "true" ]; then
+            echo "::error::Patch execution requires explicit paid mode."
+            exit 1
+          fi
+          if [ "$PAID_ALLOWED" = "true" ]; then
+            if [ -z "${ANTHROPIC_API_KEY:-}" ] || [ -z "$L2_MODEL" ] || [ -z "$L3_MODEL" ] || [ "$L2_MODEL" = "$L3_MODEL" ]; then
+              echo "::error::Paid mode needs ANTHROPIC_API_KEY secret and distinct explicit model IDs."
+              exit 1
+            fi
+          fi
+      - name: Clone public BugsInPy metadata without running its setup.sh
+        run: |
+          git clone --depth 1 --quiet https://github.com/soarsmu/BugsInPy.git /tmp/bugsinpy-metadata
+      - name: Build reviewed historical image only when expressly authorized
+        if: ${{ inputs.allow_paid_api && inputs.execute_patch_tests }}
+        run: |
+          set -euo pipefail
+          if [ "$CASE_ID" = "tqdm-6" ]; then
+            docker build --pull -f docker/bugsinpy-py36.Dockerfile -t adaptive-bugsinpy:py36 .
+          elif [ "$CASE_ID" = "tornado-6" ]; then
+            docker build --pull -f docker/bugsinpy-py37.Dockerfile -t adaptive-bugsinpy:py37 .
+          else
+            exit 1
+          fi
+      - name: Default safe dry run (no API, no Docker execution)
+        if: ${{ !inputs.allow_paid_api }}
+        run: |
+          PYTHONPATH=src python -m adaptive_llm_router.bugsinpy_eval_pipeline \
+            --case-id "$CASE_ID" \
+            --dataset-root /tmp/bugsinpy-metadata \
+            --workspace /tmp/bugsinpy-patch-pipeline \
+            --evidence-file benchmarks/data/bugsinpy_six_historical_reproductions.json \
+            --output-root outputs/llm-patch-pipeline
+      - name: Opted-in paid L2/L3 candidate generation and optional Docker verification
+        if: ${{ inputs.allow_paid_api }}
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set -euo pipefail
+          EXTRA_ARGS=()
+          if [ "$RUN_PATCH_TESTS" = "true" ]; then
+            EXTRA_ARGS+=(--execute-patch-tests)
+          fi
+          PYTHONPATH=src python -m adaptive_llm_router.bugsinpy_eval_pipeline \
+            --case-id "$CASE_ID" \
+            --dataset-root /tmp/bugsinpy-metadata \
+            --workspace /tmp/bugsinpy-patch-pipeline \
+            --evidence-file benchmarks/data/bugsinpy_six_historical_reproductions.json \
+            --output-root outputs/llm-patch-pipeline \
+            --l2-model "$L2_MODEL" --l3-model "$L3_MODEL" \
+            --allow-paid-api "${EXTRA_ARGS[@]}"
+      - name: Summarize explicit outcomes (green action is not model success)
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          path = Path("outputs/llm-patch-pipeline/e2e_summary.json")
+          md = ["## L2 vs L3 historical patch evaluation", "",
+                "A successful GitHub Actions job does NOT prove any LLM patch worked.", "",
+                "| Tier | Candidate generation | Independently verified success |",
+                "| --- | --- | --- |"]
+          if path.is_file():
+              report = json.loads(path.read_text(encoding="utf-8"))
+              for tier in ("l2", "l3"):
+                  row = report["results"].get(tier, {})
+                  md.append(f"| {tier.upper()} | {row.get('generation_status', 'not_requested')} | {row.get('verified_patch_success')} |")
+              md.extend(["", f"Comparison: {report['comparison']['status']}",
+                         "Historical test-derived symptom and known source location are oracles."])
+          else:
+              md.append("| - | No summary produced | - |")
+              print("::warning::Pipeline did not finish preparation.")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+              f.write("\n".join(md) + "\n")
+          PY
+      - name: Upload prompt, model usage, candidate diffs and optional verifier logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bugsinpy-llm-patch-eval-${{ github.run_id }}
+          path: outputs/llm-patch-pipeline/
+          if-no-files-found: warn
+          retention-days: 14
