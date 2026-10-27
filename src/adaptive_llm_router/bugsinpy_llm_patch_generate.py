@@ -81,8 +81,10 @@ def extract_patch(answer: str, case_id: str) -> bytes:
     return data
 
 def call_anthropic(prompt: str, model: str, key: str, max_tokens: int) -> dict:
+    # Claude Sonnet/Opus 5.5 use adaptive thinking and reject temperature,
+    # top_p and top_k. Avoid unsupported sampling fields for all models.
     payload = json.dumps({
-        "model": model, "max_tokens": max_tokens, "temperature": 0,
+        "model": model, "max_tokens": max_tokens,
         "messages": [{"role": "user", "content": prompt}]
     }).encode()
     req = urllib.request.Request("https://api.anthropic.com/v1/messages",
