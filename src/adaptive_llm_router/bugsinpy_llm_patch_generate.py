@@ -38,9 +38,13 @@ def prepare(case_id: str, buggy_root: Path, failure: str) -> dict:
 
 def extract_patch(answer: str, case_id: str) -> bytes:
     answer = answer.strip()
-    if answer.startswith("~~~"):
+    # Models commonly return fenced Git diffs; accept both styles
+    # but still validate all changed paths and hunks before saving.
+    markers = ("~~~", chr(96) * 3)
+    if answer.startswith(markers):
+        marker = next(x for x in markers if answer.startswith(x))
         lines = answer.splitlines()
-        if len(lines) < 3 or not lines[-1].startswith("~~~"):
+        if len(lines) < 3 or not lines[-1].startswith(marker):
             raise ReplayError("Malformed fenced response")
         answer = "\n".join(lines[1:-1]).strip()
     if not answer.startswith("diff --git "):
