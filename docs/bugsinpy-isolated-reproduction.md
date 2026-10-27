@@ -52,6 +52,27 @@ The classifier now matches actual pytest/unittest result lines and real import/s
 
 This success is **historical defect reproduction only**. No AI generated a patch and no L2-vs-L3 repair success/cost results have been measured.
 
+## 2026-10-27: Tornado-6 false positive in run #40430425836
+
+In [workflow #40430425836](https://github.com/namyikim/adaptive-llm-router/actions/runs/40430425836), `case_id=tornado-6`, `execute=true`, and all containers finished. The machine-produced JSON wrongly reported `reproduced_buggy_fail_fixed_pass`, `verified_reproductions=1`. Inspecting **both actual buggy logs** shows:
+
+```text
+ERROR: LeakTest (unittest.loader._FailedTest)
+AttributeError: module 'tornado.test.asyncio_test' has no attribute 'LeakTest'
+Ran 1 test in 0.000s
+FAILED (errors=1)
+```
+
+The requested tests **never ran** on the buggy commit; two tests passed in the official fixed commit. GitHub commit comparison confirms that the entire `LeakTest` class and both tests were introduced in the fixed commit, alongside **separate implementation edits** in `tornado/ioloop.py` and `tornado/platform/asyncio.py`. The historical reproduction claim from that prior artifact is **invalid; do not use it as a verified case**.
+
+### Safeguard and legitimate replay
+
+The classifier now recognizes unittest `_FailedTest` with a missing module attribute as `test_not_collected`, which **cannot** count as an assertion/test failure. If this arises for the SHA-pinned `tornado-6` case only, the runner saves each original missing-test log and mounts **only** the historical fixed-commit `tornado/test/asyncio_test.py` test file over that path in the buggy checkout (read-only Docker bind mount). It does **not** copy either implementation fix. Both new regression tests are replayed separately; evidence includes `regression_test_backport`, the test SHA-256, two `*_missing_test.log` files and two replay logs. A repaired test runner should report `reproduced_buggy_fail_fixed_pass` only if a real failing assertion/error occurs *inside the newly collected test* and all fixed-commit tests pass.
+
+**Verification-only leakage:** the new test file was authored in the fixing commit; the test code is permitted *only* to establish a historical verifier result. It must not appear in AI debugger prompts or be described as a blind no-oracle task.
+
+The new GitHub Actions step summary displays explicit per-case statuses to prevent confusing the green job icon with a reproduced historical defect. Re-run case `tornado-6`, `execute=true` on updated main before recording any confirmed Tornado-6 reproduction.
+
 ## 상태 해석
 
 | status | 의미 |
