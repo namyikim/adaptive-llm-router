@@ -1,0 +1,28 @@
+{
+  "source_run_id": 40468990139,
+  "source_artifact_id": 12717262868,
+  "source_artifact_sha256": "9a7c2697c6d145533fce73dfe9d6b7f1e72e7c658739b395354646ef06183b3e",
+  "original_summary_sha256": "5dee1b8776e00b5823de8168f4c80851de177eedba84d1e7e6987318f5dda8fe",
+  "case_id": "tqdm-6",
+  "buggy_commit": "a4b9c86db548b2d0dbb5af7a6bbdc26ab47e1eec",
+  "prompt_sha256": "61ccab1c4720890c83f752caa9bc275da94352660c834a7bd4273521314b6c2c",
+  "source_context_version": "full-pinned-files-v2",
+  "responses": {
+    "l2": {
+      "model_id": "claude-sonnet-5-5",
+      "response_id": "msg_011CgSNQAuqDSmr5NubiFdr3",
+      "response_sha256": "23c56ee4e55dd3bbbaef99f3aef7a2230577b7ebf7ea3b7999f0bff3d7bf566b",
+      "original_status": "regression_passed",
+      "original_verified_patch_success": true,
+      "text": "```diff\ndiff --git a/tqdm/_tqdm.py b/tqdm/_tqdm.py\n--- a/tqdm/_tqdm.py\n+++ b/tqdm/_tqdm.py\n@@ -738,4 +738,5 @@\n             self.pos = self._get_free_pos(self)\n             self._instances.remove(self)\n             self.n = initial\n+            self.total = total\n             return\n```"
+    },
+    "l3": {
+      "model_id": "claude-opus-5-5",
+      "response_id": "msg_011CgSNR7pade6FqUQw8bYET",
+      "response_sha256": "299a445bbe84f2247afe1e4d6bf64e0501b4ae10508909fd013e25302f06f463",
+      "original_status": "invalid_candidate_diff",
+      "original_verified_patch_success": null,
+      "text": "The `AttributeError` occurs when a bar is created with `disable=True` and you then call `len()` on it. Here is the chain:\n\n- The early-return `if disable:` branch in `__init__` sets `iterable`, `disable`, `pos` and `n`, but never `self.total`.\n- `__len__` falls back to `self.total` when there is no iterable, or when the iterable has neither `shape` nor `__len__`.\n- In that case `len()` hits the missing attribute and raises.\n\nThe fix stores `total` in the disabled branch as well. I have not run this against a test.\n\n```diff\ndiff --git a/tqdm/_tqdm.py b/tqdm/_tqdm.py\n--- a/tqdm/_tqdm.py\n+++ b/tqdm/_tqdm.py\n@@ -735,10 +735,11 @@\n         if disable:\n             self.iterable = iterable\n             self.disable = disable\n             self.pos = self._get_free_pos(self)\n             self._instances.remove(self)\n             self.n = initial\n+            self.total = total\n             return\n \n         if kwargs:\n             self.disable = True\n             self.pos = self._get_free_pos(self)\n```"
+    }
+  }
+}
