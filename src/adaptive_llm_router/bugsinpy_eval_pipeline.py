@@ -15,6 +15,7 @@ from pathlib import Path
 
 from .bugsinpy_llm_patch_generate import PILOT, prepare, call_anthropic, extract_patch
 from .bugsinpy_patch_verifier import verify_patch
+from .bugsinpy_patch_compare import compare_patch_trials
 from .bugsinpy_reproduce import (
     EXPECTED_COMMITS, ReplayError, checkout_versions, prepare_metadata,
 )
@@ -170,6 +171,16 @@ def run_pipeline(*, case_id: str, dataset_root: Path, workspace: Path,
             row["error_type"] = type(exc).__name__
         save()
 
+    if execute_patch_tests:
+        # The existing six-case comparator never imputes missing trials.
+        # With one requested case, the other five remain explicitly incomplete.
+        six_case = compare_patch_trials(output_root / "verifier_results")
+        (output_root / "six_case_comparison.json").write_text(
+            json.dumps(six_case, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        report["six_case_comparison_file"] = "six_case_comparison.json"
+        report["overall_six_case_success_rates"] = six_case["overall_six_case_success_rates"]
     observed = [report["results"][tier]["verified_patch_success"] for tier in ("l2", "l3")]
     if all(isinstance(x, bool) for x in observed):
         report["comparison"] = {
