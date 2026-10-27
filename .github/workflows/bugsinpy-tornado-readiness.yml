@@ -1,11 +1,5 @@
 name: Tornado-6 readiness (no model API)
 on:
-  # One-off development validation; remove this push trigger before merge.
-  push:
-    branches:
-      - test/tornado6-no-api-readiness-20261027
-    paths:
-      - .github/workflows/bugsinpy-tornado-readiness.yml
   workflow_dispatch:
     inputs:
       execute_historical_tests:
@@ -46,10 +40,10 @@ jobs:
             --buggy-root /tmp/tornado-readiness-work/source/checkouts/tornado-6/buggy \
             --output outputs/tornado-readiness/source_readiness.json
       - name: Build reviewed historical image without provider credentials
-        if: ${{ github.event_name == 'push' || inputs.execute_historical_tests }}
+        if: ${{ inputs.execute_historical_tests }}
         run: docker build -f docker/bugsinpy-py37.Dockerfile -t adaptive-bugsinpy:py37 .
       - name: Independently reproduce both original leak tests and audit their logs
-        if: ${{ github.event_name == 'push' || inputs.execute_historical_tests }}
+        if: ${{ inputs.execute_historical_tests }}
         run: |
           python -m adaptive_llm_router.bugsinpy_reproduce \
             --cases tornado-6 --execute \
