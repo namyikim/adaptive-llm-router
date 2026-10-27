@@ -198,6 +198,38 @@ def checkout_versions(record: dict, workspace: Path) -> dict[str, Path]:
     return roots
 
 
+def classify_test_output(exit_code: int, output: str) -> str:
+    """Classify test outcomes, not words in printed snippets of test source.
+
+    In tqdm-6, except ImportError: appeared in a traceback's code
+    excerpt although the actual failure was AttributeError: ...total.
+    Broad substring matching incorrectly hid the confirmed regression.
+    """
+    if exit_code == 0:
+        return "pass"
+    if re.search(
+        r"(?:^ERROR:\s*not found:|^collected 0 items\b|^no tests ran\b)",
+        output, re.I | re.M,
+    ):
+        return "test_not_collected"
+    environment_error = (
+        r"^\s*(?:E\s+)?(?:ModuleNotFoundError|ImportError|SyntaxError):"
+        r"|^ERROR collecting\b"
+        r"|^INTERNALERROR\b"
+        r"|^ERROR:\s*(?:usage|unrecognized arguments|unknown option)\b"
+        r"|^FAILED\s+\S+.*-\s*(?:ModuleNotFoundError|ImportError|SyntaxError):"
+    )
+    if re.search(environment_error, output, re.M):
+        return "environment_failure"
+    if re.search(
+        r"^FAILED\s+\S+|^FAIL:\s+|^E\s+(?:assert\b|AssertionError:|AttributeError:)"
+        r"|^FAILED\s+\(failures=[1-9]",
+        output, re.M,
+    ):
+        return "test_failure"
+    return "nonzero_unclassified"
+
+
 def docker_test(image: str, source_root: Path, command: list[str],
                 *, timeout_seconds: int = 120,
                 regression_test_from_fixed: Path | None = None) -> dict:
@@ -232,17 +264,7 @@ def docker_test(image: str, source_root: Path, command: list[str],
         res = subprocess.run(args, capture_output=True, text=True,
                              timeout=timeout_seconds, check=False)
         output = (res.stdout or "") + "\n" + (res.stderr or "")
-        if res.returncode == 0:
-            verdict = "pass"
-        elif re.search(r"(?:ERROR: not found:|collected 0 items|no tests ran|not found: /src/)", output, re.I):
-            verdict = "test_not_collected"
-        elif re.search(r"(ModuleNotFoundError|ImportError|No module named|SyntaxError|INTERNALERROR|unknown option)", output):
-            verdict = "environment_failure"
-        elif re.search(r"(AssertionError|FAILED|FAIL:|E\s+assert|(?:[1-9]\d* )?failed(?:,| in|$))",
-                       output, re.M):
-            verdict = "test_failure"
-        else:
-            verdict = "nonzero_unclassified"
+        verdict = classify_test_output(res.returncode, output)
         return {
             "command": command, "exit_code": res.returncode, "verdict": verdict,
             "duration_seconds": round(time.monotonic() - started, 3),
