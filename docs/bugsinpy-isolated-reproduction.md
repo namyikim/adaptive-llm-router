@@ -35,6 +35,23 @@ For **the pinned `tqdm-6` case only**, if the buggy commit lacks that exact test
 
 **Leakage restriction:** The backported test comes from the fixing commit, so it is a **verifier-only oracle**. Never expose its code or the fixed implementation as target LLM debugging input, and do not use it for model comparison calibration without explicitly disclosing this test oracle.
 
+## 2026-10-27: confirmed historical tqdm-6 failure, erroneous classifier
+
+[Actions run #40428395903](https://github.com/namyikim/adaptive-llm-router/actions/runs/40428395903) executed `tqdm-6` with `execute=true`, on commit `ce59ea3546feb3846e5d1ad8ae7b17255203f225`. The result artifact `bugsinpy-reproduction-40428395903` contains:
+
+| Evidence | Buggy commit | Fixed commit |
+| --- | --- | --- |
+| Selected `test_imap` | 1 collected | 1 collected |
+| Exit code | 1 | 0 |
+| Underlying outcome | **AttributeError** in `tqdm/_tqdm.py` `__len__` | **1 passed** |
+| Test provenance | Verifier-only fixed-commit regression test, mounted read-only | Native fixed-commit test |
+
+The buggy traceback reports: `AttributeError: 'tqdm' object has no attribute 'total'`. The actual source code contains `except ImportError:` in a printed source excerpt; the earlier classifier scanned for the bare word `ImportError` before checking `FAILED`, falsely recorded `environment_failure`. Consequently the on-disk `reproduction_summary.json` currently reports `verified_reproductions: 0` and `environment_or_timeout`, **but the saved underlying logs prove the historical bug failed and the official fixed version passed**. This is a **post-hoc expert assessment** and does not rewrite the existing run artifact.
+
+The classifier now matches actual pytest/unittest result lines and real import/syntax errors, not incidental words in printed source. New CPU regression tests cover this exact trace, missing-test cases, and genuine environment failures. Rerun this workflow under the updated main branch to produce **machine-verifiable** `reproduced_buggy_fail_fixed_pass` data.
+
+This success is **historical defect reproduction only**. No AI generated a patch and no L2-vs-L3 repair success/cost results have been measured.
+
 ## 상태 해석
 
 | status | 의미 |
