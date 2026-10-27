@@ -46,6 +46,36 @@ Anthropic의 [공식 모델 목록](https://platform.claude.com/docs/en/models/o
 
 **주의:** 유료 입력을 선택했다면 첫 실행과 GitHub Actions의 `Re-run`는 각각 새로운 청구를 발생시킬 수 있습니다. 사전 검증이 통과하더라도 지원되지 않는 모델 ID, 계정 크레딧 부족, 모델별 정책·토큰 한도 등으로 API가 실패할 수 있으며, 해당 경우에는 원시 성공률로 보정하지 않습니다.
 
+## 2026-10-27 유료 실행 #40459643599 기록 및 문제 수정
+
+[실행 #40459643599](https://github.com/namyikim/adaptive-llm-router/actions/runs/40459643599)은 `tqdm-6`, `allow_paid_api=true`, `execute_patch_tests=true`, L2 `claude-sonnet-5-5`, L3 `claude-opus-5-5`로 실행됐습니다. **두 모델 모두 실제 API 응답에 성공하고 토큰을 사용했으나**, 후보 Git diff 추출 과정에서 `ReplayError`가 발생해 패치 파일과 독립 Docker 검증 결과는 생성되지 않았습니다.
+
+| 필드 | Sonnet 5.5 | Opus 5.5 |
+| --- | ---: | ---: |
+| 입력 토큰 | 4,760 | 4,760 |
+| 출력 토큰 (thinking 포함) | 1,086 (743 thinking) | 1,463 (879 thinking) |
+| API 응답 지연 | 8.25초 | 13.72초 |
+| 독립 수정 검증 | **미실행** | **미실행** |
+
+기존 아티팩트는 `e2e_summary.json`과 `prompt.txt`만 남겼고 **모델의 원본 응답 문장을 보관하지 않았습니다**. 두 모델의 정확한 응답 형식을 복원할 수 없으므로, 단순히 잘못된 코드펜스가 원인이었다고 단정할 수 없습니다. 과금한 호출을 임의로 재실행해서는 안 됩니다.
+
+이후부터는 `l2_provider_response.txt`와 `l3_provider_response.txt`를 **검증 전에** 기록하며, `response_sha256`, `generation_status=provider_responded`, `failure_stage=patch_validation`, `validation_reason` 등으로 어떤 단계가 실패했는지 구분합니다. `l2.diff`/`l3.diff`는 실제로 허용 경로·형식 검증을 통과했을 때만 생성됩니다. GitHub Actions에는 모델 응답이 무효하면 경고를 표시합니다.
+
+Git diff를 모델이 일반 Markdown 펜스(`\`\`\`diff`)나 짧은 설명과 함께 반환해도 추출을 시도하지만, **없는 diff·hunk를 새로 만들거나 금지된 테스트 파일 변경을 허용하지 않습니다.**
+
+### 저장된 응답으로 무료 복구
+
+새 실행에서 `*_provider_response.txt`가 생성됐다면, 추출기 버그 수정 후 **API를 다시 호출하지 않고** 다음과 같이 오프라인에서 패치만 재추출할 수 있습니다.
+
+```bash
+PYTHONPATH=src python -m adaptive_llm_router.bugsinpy_patch_response_replay \
+  --case-id tqdm-6 \
+  --response-file /tmp/llm-result/l2_provider_response.txt \
+  --output-patch /tmp/llm-result/l2_recovered.diff
+```
+
+이 단계는 패치 형식 확인만 수행하며 실제 오류 수정 성공 여부는 별도 격리 테스트가 필요합니다. **2026-10-27 기존 실행 #40459643599에는 원본 응답 파일이 없으므로 오프라인 복구 대상이 아닙니다.** 원본 응답 파일은 모델이 생성한 공개 프로젝트 코드만 포함하도록 설계됐지만, 아티팩트를 외부에 공유하기 전 개인 정보·비밀이 없는지 검토하십시오.
+
 ## 결과 위치와 평가 제한
 
 GitHub Actions 실행 화면의 `Artifacts → bugsinpy-llm-patch-eval-<run-id>`를 다운로드하면 다음 파일을 확인할 수 있습니다.
