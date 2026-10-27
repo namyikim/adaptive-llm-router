@@ -123,6 +123,7 @@ def run_pipeline(*, case_id: str, dataset_root: Path, workspace: Path,
         }
         report["results"][tier] = row
         save()
+        stage = "provider_request"
         try:
             answer = call_anthropic(
                 candidate_input["prompt"], model_id,
@@ -135,8 +136,22 @@ def run_pipeline(*, case_id: str, dataset_root: Path, workspace: Path,
                 "generation_latency_ms": answer["elapsed_ms"],
                 "usd_cost": None,  # No guessed tariffs or unverified USD.
             })
+            # Archive unmodified provider text BEFORE patch parsing so a
+            # future parser fix can be tested offline without another billed
+            # Anthropic request. These prompts use public buggy source only.
+            raw = answer["answer"]
+            if not isinstance(raw, str) or len(raw) > 200_000:
+                raise ReplayError("Empty or oversized provider response")
+            raw_name = tier + "_provider_response.txt"
+            (output_root / raw_name).write_text(raw, encoding="utf-8")
+            row.update({
+                "generation_status": "provider_responded",
+                "response_file": raw_name,
+                "response_sha256": hashlib.sha256(raw.encode("utf-8")).hexdigest(),
+            })
             save()
-            patch = extract_patch(answer["answer"], case_id)
+            stage = "patch_validation"
+            patch = extract_patch(raw, case_id)
             patch_name = tier + ".diff"
             (output_root / patch_name).write_bytes(patch)
             row.update({
@@ -147,6 +162,7 @@ def run_pipeline(*, case_id: str, dataset_root: Path, workspace: Path,
             })
             save()
             if execute_patch_tests:
+                stage = "patch_verification"
                 # Separate workspaces allow identical L2/L3 patches to be
                 # independently tested without stale-directory collisions.
                 verification = verify_patch(
@@ -166,9 +182,17 @@ def run_pipeline(*, case_id: str, dataset_root: Path, workspace: Path,
                 row["status"] = verification["status"]
         except Exception as exc:
             # Never hide the other tier's results; no network retries.
-            # Avoid leaking API headers or credentials in saved errors.
-            row["status"] = "generation_or_verification_error"
+            # Preserve the stage and locally-generated validation reason.
+            # Never record arbitrary provider exception strings, HTTP
+            # headers or API tokens into the public Actions artifact.
+            row["failure_stage"] = stage
+            row["status"] = (
+                "invalid_candidate_diff" if stage == "patch_validation"
+                else "generation_or_verification_error"
+            )
             row["error_type"] = type(exc).__name__
+            if stage == "patch_validation" and isinstance(exc, ReplayError):
+                row["validation_reason"] = str(exc)[:240]
         save()
 
     if execute_patch_tests:
