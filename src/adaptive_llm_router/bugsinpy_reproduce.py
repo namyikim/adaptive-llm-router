@@ -7,6 +7,7 @@ A buggy-fails/fixed-passes verdict is NOT a model-repair success verdict.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -198,8 +199,13 @@ def checkout_versions(record: dict, workspace: Path) -> dict[str, Path]:
 
 
 def docker_test(image: str, source_root: Path, command: list[str],
-                *, timeout_seconds: int = 120) -> dict:
-    """Run one allowlisted test without network, privileges or writable sources."""
+                *, timeout_seconds: int = 120,
+                regression_test_from_fixed: Path | None = None) -> dict:
+    """Run one allowlisted test; optionally bind-mount a fixed-commit TEST file.
+
+    This does not copy the fixed implementation patch. Used only for the
+    reviewed tqdm-6 case where test_imap was first ADDED in the fixing commit.
+    """
     args = [
         "docker", "run", "--rm", "--pull=never",
         "--network=none", "--read-only", "--cap-drop=ALL",
@@ -210,8 +216,17 @@ def docker_test(image: str, source_root: Path, command: list[str],
         "--workdir", "/src", "--env", "HOME=/tmp",
         "--env", "PYTHONDONTWRITEBYTECODE=1",
         "--env", "PYTHONPATH=/src:/src/tqdm:/src/tqdm/tests",
-        image, *command,
     ]
+    if regression_test_from_fixed is not None:
+        if (not regression_test_from_fixed.is_file()
+                or regression_test_from_fixed.name != "tests_synchronisation.py"):
+            raise ReplayError("Refusing unreviewed regression test overlay")
+        args += [
+            "--mount",
+            f"type=bind,src={regression_test_from_fixed.resolve()},"
+            "dst=/src/tqdm/tests/tests_synchronisation.py,readonly",
+        ]
+    args += [image, *command]
     started = time.monotonic()
     try:
         res = subprocess.run(args, capture_output=True, text=True,
@@ -219,6 +234,8 @@ def docker_test(image: str, source_root: Path, command: list[str],
         output = (res.stdout or "") + "\n" + (res.stderr or "")
         if res.returncode == 0:
             verdict = "pass"
+        elif re.search(r"(?:ERROR: not found:|collected 0 items|no tests ran|not found: /src/)", output, re.I):
+            verdict = "test_not_collected"
         elif re.search(r"(ModuleNotFoundError|ImportError|No module named|SyntaxError|INTERNALERROR|unknown option)", output):
             verdict = "environment_failure"
         elif re.search(r"(AssertionError|FAILED|FAIL:|E\s+assert|(?:[1-9]\d* )?failed(?:,| in|$))",
@@ -250,7 +267,8 @@ def classify_reproduction(buggy: list[dict], fixed: list[dict]) -> str:
     if not buggy or len(buggy) != len(fixed):
         return "inconclusive"
     all_results = buggy + fixed
-    if any(row["verdict"] in ("environment_failure", "timeout", "nonzero_unclassified")
+    if any(row["verdict"] in ("environment_failure", "timeout",
+                                  "nonzero_unclassified", "test_not_collected")
            for row in all_results):
         return "environment_or_timeout"
     if all(row["verdict"] == "pass" for row in fixed) and any(
@@ -278,8 +296,40 @@ def run_one(record: dict, workspace: Path, output_root: Path) -> dict:
             rows = []
             for i, command in enumerate(record["test_commands"]):
                 row = docker_test(record["docker_image"], sources[version], command)
+                if (case_id == "tqdm-6" and version == "buggy"
+                        and row["verdict"] == "test_not_collected"):
+                    # This BugsInPy test was ADDED in the historical fixed
+                    # commit. Mount its test file read-only into buggy checkout
+                    # WITHOUT copying the actual implementation fix.
+                    original_log = f"{case_id}_buggy_{i + 1}_missing_test.log"
+                    (output_root / original_log).write_text(
+                        row.pop("output"), encoding="utf-8")
+                    test_from_fixed = sources["fixed"] / "tqdm/tests/tests_synchronisation.py"
+                    result["regression_test_backport"] = {
+                        "provenance": "historical_fixed_commit_test_file_for_verifier_only",
+                        "no_implementation_patch_copied": True,
+                        "fixed_test_file": "tqdm/tests/tests_synchronisation.py",
+                        "missing_test_log": original_log,
+                        "test_sha256": (
+                            hashlib.sha256(test_from_fixed.read_bytes()).hexdigest()
+                            if test_from_fixed.is_file() else None
+                        ),
+                    }
+                    if test_from_fixed.is_file():
+                        row = docker_test(
+                            record["docker_image"], sources[version], command,
+                            regression_test_from_fixed=test_from_fixed)
+                        row["test_origin"] = "fixed_commit_regression_test_only"
+                    else:
+                        row = {
+                            "command": command,
+                            "exit_code": None,
+                            "verdict": "test_not_collected",
+                            "output": "Fixed-commit regression test file is missing",
+                        }
                 row["output_file"] = f"{case_id}_{version}_{i + 1}.log"
-                (output_root / row["output_file"]).write_text(row.pop("output"), encoding="utf-8")
+                (output_root / row["output_file"]).write_text(
+                    row.pop("output"), encoding="utf-8")
                 rows.append(row)
             verdicts[version] = rows
         result["tests"] = verdicts
