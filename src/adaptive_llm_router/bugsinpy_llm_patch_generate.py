@@ -11,15 +11,13 @@ from pathlib import Path
 from .bugsinpy_patch_verify import PATCH_TARGETS, inspect_patch
 from .bugsinpy_reproduce import EXPECTED_COMMITS, ReplayError
 from .model_diff import ModelDiffError, extract_complete_diff
+from .bugsinpy_source_context import CONTEXT_VERSION, complete_source_context
 
 PILOT = ("tqdm-6", "tornado-6")
 
-def selected_buggy_excerpt(source: str, case_id: str) -> str:
-    """Preserve relevant production methods beyond the first 18k characters.
 
-    Source is only ever read from the pinned buggy checkout; no fixed file is
-    accessed. The selection heuristic is a documented task-location hint.
-    """
+def selected_buggy_excerpt(source: str, case_id: str) -> str:
+    """Legacy preview helper only; model prompts no longer use this truncation."""
     if len(source) <= 18000:
         return source
     keywords = (
@@ -48,21 +46,22 @@ def prepare(case_id: str, buggy_root: Path, failure: str) -> dict:
         text=True, timeout=15).strip()
     if head != EXPECTED_COMMITS[case_id][0]:
         raise ReplayError("Expected pinned buggy commit only")
-    sections = []
-    for name in sorted(PATCH_TARGETS[case_id]):
-        path = buggy_root / name
-        if not path.is_file() or path.is_symlink():
-            raise ReplayError("Missing or unsafe implementation source")
-        sections.append("File: " + name + "\n" + selected_buggy_excerpt(
-            path.read_text(encoding="utf-8"), case_id))
+    source_text, manifest = complete_source_context(buggy_root, head, PATCH_TARGETS[case_id])
     prompt = (
         "Fix the historical Python bug. Return ONLY a Git unified diff, with "
         "diff --git, --- and +++ file headers, and @@ hunks. Do not modify tests "
         "or add files. No official patch or verifier test is supplied.\n"
-        "Case: " + case_id + "\nObserved failure:\n" + failure+
-        "\nOriginal buggy source:\n" + "\n\n".join(sections))
+        "All listed source files are COMPLETE and start at source line 1. Use "
+        "original file line numbers in @@ headers, not prompt or excerpt line numbers. "
+        "The definition index and BEGIN/END labels are metadata, not source: "
+        "do not copy them into the patch. Include exact original context lines. "
+        "Analyze the supplied buggy source; do not use remembered upstream fixes.\n"
+        "Case: " + case_id + "\nObserved failure:\n" + failure +
+        "\nOriginal buggy source:\n" + source_text)
     return {"case_id": case_id, "buggy_commit": head, "prompt": prompt,
-            "input_sha256": hashlib.sha256(prompt.encode()).hexdigest()}
+            "input_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
+            "source_context_version": CONTEXT_VERSION, "source_manifest": manifest,
+            "prompt_bytes": len(prompt.encode("utf-8"))}
 
 
 def extract_patch(answer: str, case_id: str) -> bytes:
@@ -81,8 +80,7 @@ def extract_patch(answer: str, case_id: str) -> bytes:
 
 
 def call_anthropic(prompt: str, model: str, key: str, max_tokens: int) -> dict:
-    # Claude Sonnet/Opus 5.5 use adaptive thinking and reject temperature,
-    # top_p and top_k. Avoid unsupported sampling fields for all models.
+    # Avoid optional sampling fields for compatibility with configured models.
     payload = json.dumps({
         "model": model, "max_tokens": max_tokens,
         "messages": [{"role": "user", "content": prompt}]
@@ -101,6 +99,7 @@ def call_anthropic(prompt: str, model: str, key: str, max_tokens: int) -> dict:
     return {"answer": answer, "model": obj["model"], "id": obj.get("id"),
             "usage": obj.get("usage", {}),
             "elapsed_ms": round(1000 * (time.monotonic() - start), 1)}
+
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
@@ -126,8 +125,12 @@ def main() -> None:
                       args.failure_file.read_text(encoding="utf-8"))
     args.output_root.mkdir(parents=True, exist_ok=True)
     (args.output_root / "prompt.txt").write_text(request["prompt"], encoding="utf-8")
+    (args.output_root / "source_manifest.json").write_text(
+        json.dumps(request["source_manifest"], indent=2) + "\n", encoding="utf-8")
     report = {"case_id": args.case_id, "buggy_commit": request["buggy_commit"],
               "input_sha256": request["input_sha256"],
+              "source_context_version": request["source_context_version"],
+              "source_manifest_file": "source_manifest.json", "prompt_bytes": request["prompt_bytes"],
               "paid_enabled": args.allow_paid_api, "results": {},
               "status": "dry_run_no_api_calls"}
     if args.allow_paid_api:
@@ -154,6 +157,7 @@ def main() -> None:
     (args.output_root / "generation_report.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     print(json.dumps({k: v for k, v in report.items() if k != "results"}, indent=2))
+
 
 if __name__ == "__main__":
     main()
