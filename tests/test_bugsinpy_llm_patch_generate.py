@@ -43,6 +43,23 @@ class PatchPromptTests(unittest.TestCase):
         with self.assertRaises(ReplayError):
             extract_patch(good.replace("tqdm/_tqdm.py","tqdm/tests/test.py"),"tqdm-6")
 
+    def test_extract_diff_from_explanatory_fenced_answer(self):
+        diff = ("diff --git a/tqdm/_tqdm.py b/tqdm/_tqdm.py\n"
+                "--- a/tqdm/_tqdm.py\n+++ b/tqdm/_tqdm.py\n"
+                "@@ -1 +1 @@\n-old\n+new\n")
+        answer = "Suggested change:\n\n" + chr(96)*3 + "diff\n" + diff + chr(96)*3 + "\n"
+        self.assertEqual(extract_patch(answer, "tqdm-6"), diff.encode())
+        self.assertEqual(extract_patch(
+            "Here is the diff:\n" + diff + "\nExplanation: improves handling.",
+            "tqdm-6"), diff.encode())
+        with self.assertRaises(ReplayError):
+            extract_patch("It should use __len__. I cannot produce a diff.", "tqdm-6")
+        with self.assertRaises(ReplayError):
+            extract_patch(
+                "The fix is:\n" + diff.replace("tqdm/_tqdm.py", "tqdm/tests/test_bad.py"),
+                "tqdm-6",
+            )
+
     def test_buggy_source_excerpt_reaches_relevant_method_after_prefix(self):
         long_buggy = "import os\n" + "x = 1\n" * 4300 + "def __len__(self):\n    return self.total\n"
         selected = selected_buggy_excerpt(long_buggy, "tqdm-6")
