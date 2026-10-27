@@ -139,6 +139,10 @@ jobs:
               for tier in ("l2", "l3"):
                   row = report["results"].get(tier, {})
                   md.append(f"| {tier.upper()} | {row.get('generation_status', 'not_requested')} | {row.get('verified_patch_success')} |")
+                  if row.get("status") in ("invalid_candidate_diff", "generation_or_verification_error"):
+                      stage = row.get("failure_stage", "unknown")
+                      reason = row.get("validation_reason", row.get("error_type", "unclassified"))
+                      print(f"::warning title={tier.upper()} patch evaluation incomplete::Stage={stage}, reason={reason}. Check downloadable artifact. A green workflow is not a verified fix.")
               md.extend(["", f"Comparison: {report['comparison']['status']}",
                          "Historical test-derived symptom and known source location are oracles."])
           else:

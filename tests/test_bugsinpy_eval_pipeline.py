@@ -100,6 +100,35 @@ class E2EConfigTests(unittest.TestCase):
         with self.assertRaises(ReplayError):
             run_pipeline(**self.kw)
 
+    def test_unusable_paid_response_is_preserved_without_falsely_claiming_success(self):
+        a,b,c = self.mocks()
+        calls = []
+        def paid(prompt, model, key, max_tokens):
+            calls.append(model)
+            return {"model": model, "answer": "I recommend editing the constructor.",
+                    "id": "paid-but-invalid", "usage": {"input_tokens": 4760,
+                    "output_tokens": 1086}, "elapsed_ms": 8000}
+        with a,b,c, patch.dict(os.environ, {"ANTHROPIC_API_KEY": "placeholder"}), patch(
+            "adaptive_llm_router.bugsinpy_eval_pipeline.call_anthropic", side_effect=paid), patch(
+            "adaptive_llm_router.bugsinpy_eval_pipeline.verify_patch",
+            side_effect=AssertionError("Invalid diff must not execute Docker")):
+            out = run_pipeline(**self.kw, allow_paid_api=True,
+                               execute_patch_tests=True,
+                               l2_model="model-A", l3_model="model-B")
+        self.assertEqual(calls, ["model-A", "model-B"])
+        self.assertEqual(out["comparison"]["status"], "insufficient_or_unverified_outcomes")
+        for tier in ("l2", "l3"):
+            result = out["results"][tier]
+            self.assertEqual(result["generation_status"], "provider_responded")
+            self.assertEqual(result["status"], "invalid_candidate_diff")
+            self.assertEqual(result["failure_stage"], "patch_validation")
+            self.assertEqual(result["error_type"], "ReplayError")
+            self.assertIsNone(result["verified_patch_success"])
+            self.assertEqual(result["usage"]["input_tokens"], 4760)
+            self.assertEqual((self.root / "results" / result["response_file"]).read_text(),
+                             "I recommend editing the constructor.")
+            self.assertFalse((self.root / "results" / (tier + ".diff")).exists())
+
     def test_generation_only_is_not_measured_success(self):
         a,b,c = self.mocks()
         def paid(prompt, model, key, max_tokens):

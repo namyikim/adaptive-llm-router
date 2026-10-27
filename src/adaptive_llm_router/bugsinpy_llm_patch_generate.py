@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 import time
 import urllib.request
@@ -64,21 +65,56 @@ def prepare(case_id: str, buggy_root: Path, failure: str) -> dict:
             "input_sha256": hashlib.sha256(prompt.encode()).hexdigest()}
 
 def extract_patch(answer: str, case_id: str) -> bytes:
-    answer = answer.strip()
-    # Models commonly return fenced Git diffs; accept both styles
-    # but still validate all changed paths and hunks before saving.
-    markers = ("~~~", chr(96) * 3)
-    if answer.startswith(markers):
-        marker = next(x for x in markers if answer.startswith(x))
-        lines = answer.splitlines()
-        if len(lines) < 3 or not lines[-1].startswith(marker):
-            raise ReplayError("Malformed fenced response")
-        answer = "\n".join(lines[1:-1]).strip()
-    if not answer.startswith("diff --git "):
-        raise ReplayError("Expected only a Git unified diff")
-    data = (answer + "\n").encode("utf-8")
+    """Recover a diff from ordinary/fenced/prefaced model text, then fail closed.
+
+    Never synthesize missing hunks, source paths or fixes. A patch whose
+    hunks/paths are invalid must be preserved as an invalid response rather
+    than treated as a verified candidate.
+    """
+    if not isinstance(answer, str) or not answer.strip() or len(answer) > 200_000:
+        raise ReplayError("Model returned empty or oversized patch response")
+    text = answer.strip()
+    fence = chr(96) * 3
+    # Prefer a self-contained fenced diff anywhere in the model answer.
+    for marker in (fence, "~~~"):
+        blocks = re.findall(
+            r"(?ms)^" + re.escape(marker) +
+            r"(?:diff|patch)?[ \t]*\n(.*?)^" + re.escape(marker) + r"[ \t]*$",
+            text,
+        )
+        for block in blocks:
+            if block.lstrip().startswith("diff --git "):
+                text = block.strip()
+                break
+        else:
+            continue
+        break
+    # A preamble before a naked Git diff is not a patch instruction.
+    lines = text.splitlines()
+    first = next((i for i, line in enumerate(lines)
+                  if line.startswith("diff --git ")), None)
+    if first is None:
+        raise ReplayError("No Git unified diff header in provider response")
+    lines = lines[first:]
+    cleaned = []
+    have_hunk = False
+    for line in lines:
+        if line.startswith("@@ "):
+            have_hunk = True
+        # When a model includes prose after the last diff hunk, exclude the
+        # prose; do not invent any changed lines or reinterpret source code.
+        if have_hunk and line and not line.startswith((
+            "diff --git ", "--- ", "+++ ", "@@ ", "index ", " ", "+", "-",
+            "\\ No newline at end of file"
+        )):
+            break
+        if line.startswith((fence, "~~~")):
+            break
+        cleaned.append(line)
+    data = ("\n".join(cleaned).rstrip("\n") + "\n").encode("utf-8")
     inspect_patch(data, case_id)
     return data
+
 
 def call_anthropic(prompt: str, model: str, key: str, max_tokens: int) -> dict:
     # Claude Sonnet/Opus 5.5 use adaptive thinking and reject temperature,
