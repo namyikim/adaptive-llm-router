@@ -4,13 +4,13 @@ import argparse
 import hashlib
 import json
 import os
-import re
 import subprocess
 import time
 import urllib.request
 from pathlib import Path
 from .bugsinpy_patch_verify import PATCH_TARGETS, inspect_patch
 from .bugsinpy_reproduce import EXPECTED_COMMITS, ReplayError
+from .model_diff import ModelDiffError, extract_complete_diff
 
 PILOT = ("tqdm-6", "tornado-6")
 
@@ -59,59 +59,23 @@ def prepare(case_id: str, buggy_root: Path, failure: str) -> dict:
         "Fix the historical Python bug. Return ONLY a Git unified diff, with "
         "diff --git, --- and +++ file headers, and @@ hunks. Do not modify tests "
         "or add files. No official patch or verifier test is supplied.\n"
-        "Case: " + case_id + "\nObserved failure:\n" + failure +
+        "Case: " + case_id + "\nObserved failure:\n" + failure+
         "\nOriginal buggy source:\n" + "\n\n".join(sections))
     return {"case_id": case_id, "buggy_commit": head, "prompt": prompt,
             "input_sha256": hashlib.sha256(prompt.encode()).hexdigest()}
 
-def extract_patch(answer: str, case_id: str) -> bytes:
-    """Recover a diff from ordinary/fenced/prefaced model text, then fail closed.
 
-    Never synthesize missing hunks, source paths or fixes. A patch whose
-    hunks/paths are invalid must be preserved as an invalid response rather
-    than treated as a verified candidate.
+def extract_patch(answer: str, case_id: str) -> bytes:
+    """Extract one complete model patch without dropping hunks or files.
+
+    Surrounding prose or one complete fence may be removed, but missing
+    hunk lines/counts and ambiguous additional patches are never repaired.
+    Existing case-specific implementation-path restrictions still apply.
     """
-    if not isinstance(answer, str) or not answer.strip() or len(answer) > 200_000:
-        raise ReplayError("Model returned empty or oversized patch response")
-    text = answer.strip()
-    fence = chr(96) * 3
-    # Prefer a self-contained fenced diff anywhere in the model answer.
-    for marker in (fence, "~~~"):
-        blocks = re.findall(
-            r"(?ms)^" + re.escape(marker) +
-            r"(?:diff|patch)?[ \t]*\n(.*?)^" + re.escape(marker) + r"[ \t]*$",
-            text,
-        )
-        for block in blocks:
-            if block.lstrip().startswith("diff --git "):
-                text = block.strip()
-                break
-        else:
-            continue
-        break
-    # A preamble before a naked Git diff is not a patch instruction.
-    lines = text.splitlines()
-    first = next((i for i, line in enumerate(lines)
-                  if line.startswith("diff --git ")), None)
-    if first is None:
-        raise ReplayError("No Git unified diff header in provider response")
-    lines = lines[first:]
-    cleaned = []
-    have_hunk = False
-    for line in lines:
-        if line.startswith("@@ "):
-            have_hunk = True
-        # When a model includes prose after the last diff hunk, exclude the
-        # prose; do not invent any changed lines or reinterpret source code.
-        if have_hunk and line and not line.startswith((
-            "diff --git ", "--- ", "+++ ", "@@ ", "index ", " ", "+", "-",
-            "\\ No newline at end of file"
-        )):
-            break
-        if line.startswith((fence, "~~~")):
-            break
-        cleaned.append(line)
-    data = ("\n".join(cleaned).rstrip("\n") + "\n").encode("utf-8")
+    try:
+        data = extract_complete_diff(answer)
+    except ModelDiffError as exc:
+        raise ReplayError(str(exc)) from exc
     inspect_patch(data, case_id)
     return data
 
