@@ -76,13 +76,14 @@ class E2EConfigTests(unittest.TestCase):
             calls.append(model)
             return {"model": model, "answer": DIFF, "id": model,
                     "usage": {"input_tokens": 25}, "elapsed_ms": 100}
-        def verify(record, *, patch_file, workspace, output_root, execute):
+        def verify(*, dataset_root, patch_file, workspace, output_root,
+                   case_id, tier, model_id, execute, model_latency_ms):
             self.assertTrue(execute)
             self.assertEqual(hashlib.sha256(patch_file.read_bytes()).hexdigest(), DIGEST)
             paths.append(str(workspace))
-            return {"candidate": {"sha256": DIGEST},
-                    "verified_patch_success": len(paths)==1,
-                    "status": "patch_passed" if len(paths)==1 else "patch_failed"}
+            return {"patch_sha256": DIGEST,
+                    "regression_passed": len(paths)==1,
+                    "status": "regression_passed" if len(paths)==1 else "regression_failed"}
         with a,b,c, patch.dict(os.environ, {"ANTHROPIC_API_KEY": "placeholder"}), patch(
             "adaptive_llm_router.bugsinpy_eval_pipeline.call_anthropic",
             side_effect=paid), patch(
