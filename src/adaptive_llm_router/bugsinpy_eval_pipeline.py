@@ -14,7 +14,7 @@ import os
 from pathlib import Path
 
 from .bugsinpy_llm_patch_generate import PILOT, prepare, call_anthropic, extract_patch
-from .bugsinpy_patch_verify import verify_patch
+from .bugsinpy_patch_verifier import verify_patch
 from .bugsinpy_reproduce import (
     EXPECTED_COMMITS, ReplayError, checkout_versions, prepare_metadata,
 )
@@ -66,7 +66,7 @@ def run_pipeline(*, case_id: str, dataset_root: Path, workspace: Path,
     if execute_patch_tests and not allow_paid_api:
         raise ValueError("Cannot execute patches without explicit paid-mode opt-in")
     if output_root.exists() and any(output_root.iterdir()):
-        raise ReplayError("Output folder must be empty: avoid unintended duplicate billable runs")
+        raise ReplayError("Output folder must be empty; GitHub job reruns may still incur new API charges")
     if allow_paid_api:
         if not os.environ.get("ANTHROPIC_API_KEY"):
             raise ValueError("ANTHROPIC_API_KEY secret missing")
@@ -149,16 +149,19 @@ def run_pipeline(*, case_id: str, dataset_root: Path, workspace: Path,
                 # Separate workspaces allow identical L2/L3 patches to be
                 # independently tested without stale-directory collisions.
                 verification = verify_patch(
-                    baseline, patch_file=output_root / patch_name,
+                    dataset_root=dataset_root,
                     workspace=workspace / ("verify_" + tier),
-                    output_root=output_root / ("verification_" + tier),
+                    output_root=output_root / "verifier_results",
+                    case_id=case_id, tier=tier, model_id=model_id,
+                    patch_file=output_root / patch_name,
+                    model_latency_ms=row["generation_latency_ms"],
                     execute=True,
                 )
-                if verification["candidate"]["sha256"] != row["patch_sha256"]:
-                    raise ReplayError("Candidate hash mismatch between generation and verifier")
+                if verification.get("patch_sha256") != row["patch_sha256"]:
+                    raise ReplayError("Candidate SHA mismatch between generation and verifier")
                 row["verification_file"] = (
-                    "verification_" + tier + "/candidate_patch_verification.json")
-                row["verified_patch_success"] = verification["verified_patch_success"]
+                    "verifier_results/" + case_id + "_" + tier + ".json")
+                row["verified_patch_success"] = verification["regression_passed"]
                 row["status"] = verification["status"]
         except Exception as exc:
             # Never hide the other tier's results; no network retries.
