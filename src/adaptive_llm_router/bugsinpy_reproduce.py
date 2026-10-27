@@ -209,10 +209,10 @@ def classify_test_output(exit_code: int, output: str) -> str:
         return "pass"
     # unittest synthesizes a _FailedTest when a requested class/method does
     # not exist. The body of the test never ran: NOT a historical failure.
-    if (re.search(r"^ERROR:\\s+[^\\n]+\\(unittest\\.loader\\._FailedTest\\)", output, re.M)
+    if (re.search(r"^ERROR:\s+[^\n]+\(unittest\.loader\._FailedTest\)", output, re.M)
             and re.search(
-                r"^AttributeError:\\s+module\\s+['\\\"][^'\\\"]+['\\\"]"
-                r"\\s+has no attribute\\s+['\\\"][^'\\\"]+['\\\"]",
+                r"^AttributeError:\s+module\s+['\"][^'\"]+['\"]"
+                r"\s+has no attribute\s+['\"][^'\"]+['\"]",
                 output, re.M,
             )):
         return "test_not_collected"
