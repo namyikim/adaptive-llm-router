@@ -52,7 +52,8 @@ def prepare(case_id: str, buggy_root: Path, failure: str) -> dict:
         path = buggy_root / name
         if not path.is_file() or path.is_symlink():
             raise ReplayError("Missing or unsafe implementation source")
-        sections.append("File: " + name + "\n" + selected_buggy_excerpt(\n            path.read_text(encoding="utf-8"), case_id))
+        sections.append("File: " + name + "\n" + selected_buggy_excerpt(
+            path.read_text(encoding="utf-8"), case_id))
     prompt = (
         "Fix the historical Python bug. Return ONLY a Git unified diff, with "
         "diff --git, --- and +++ file headers, and @@ hunks. Do not modify tests "
