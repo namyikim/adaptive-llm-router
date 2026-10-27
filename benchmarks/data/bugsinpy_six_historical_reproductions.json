@@ -1,0 +1,123 @@
+{
+  "schema_version": 1,
+  "record_type": "audited_historical_bug_reproduction_only",
+  "reviewed_on": "2026-10-27",
+  "scope": "Six cases with original verified Kev-4B L2 and Kev-9B L3 choices in the 100-case exploratory comparison.",
+  "n_cases": 6,
+  "n_buggy_fail_fixed_pass_from_logs": 6,
+  "n_machine_verified": 5,
+  "notes": [
+    "All six are historical defect reproductions, NOT LLM-generated patch successes or routing correctness labels.",
+    "The regression test files originate at official fixed commits and are STRICTLY verifier-only: do not expose them or any fixed-commit implementation to a target LLM.",
+    "The tqdm-6 machine JSON is a documented false negative; the archived file was not rewritten.",
+    "Tornado-5/11/14 were false positives in run 40437186598 due to non-collected tests; the definitive replays are from run 40438878278.",
+    "Use exact run URL/artifact_id/log files for reproducible audit, not an overall success percentage from unreviewed metadata."
+  ],
+  "cases": [
+    {
+      "id": "tqdm-6",
+      "run_id": 40428395903,
+      "artifact_id": 12699949871,
+      "original_machine_status": "environment_or_timeout",
+      "status": "log_verified_buggy_fail_fixed_pass",
+      "n_tests": 1,
+      "buggy_errors": [
+        "AttributeError: 'tqdm' object has no attribute 'total'"
+      ],
+      "verifier_test_file": "tqdm/tests/tests_synchronisation.py",
+      "special_note": "The archived machine verdict was a false negative because an innocent except ImportError statement in a source excerpt was mistaken for an import failure. Original logs show collected test failed; official fixed passed.",
+      "run_url": "https://github.com/namyikim/adaptive-llm-router/actions/runs/40428395903",
+      "fixed_implementation_provided_to_llm": false,
+      "verifier_only_fixed_commit_regression_test": true,
+      "llm_repair_attempted": false,
+      "llm_verified_success": null
+    },
+    {
+      "id": "tornado-6",
+      "run_id": 40436086706,
+      "artifact_id": 12703767429,
+      "original_machine_status": "reproduced_buggy_fail_fixed_pass",
+      "status": "log_and_machine_verified_buggy_fail_fixed_pass",
+      "n_tests": 2,
+      "buggy_errors": [
+        "AssertionError: 10 != 0",
+        "AssertionError: 10 != 1"
+      ],
+      "verifier_test_file": "tornado/test/asyncio_test.py",
+      "run_url": "https://github.com/namyikim/adaptive-llm-router/actions/runs/40436086706",
+      "fixed_implementation_provided_to_llm": false,
+      "verifier_only_fixed_commit_regression_test": true,
+      "llm_repair_attempted": false,
+      "llm_verified_success": null
+    },
+    {
+      "id": "tornado-5",
+      "run_id": 40438878278,
+      "artifact_id": 12705356259,
+      "original_machine_status": "reproduced_buggy_fail_fixed_pass",
+      "status": "log_and_machine_verified_buggy_fail_fixed_pass",
+      "n_tests": 1,
+      "buggy_errors": [
+        "AssertionError: Lists differ: [1010.0, 1010.0, 1010.0, 1010.0, 1010.0] != [1010, 1020, 1030, 1040, 1050]"
+      ],
+      "verifier_test_file": "tornado/test/ioloop_test.py",
+      "run_url": "https://github.com/namyikim/adaptive-llm-router/actions/runs/40438878278",
+      "fixed_implementation_provided_to_llm": false,
+      "verifier_only_fixed_commit_regression_test": true,
+      "llm_repair_attempted": false,
+      "llm_verified_success": null
+    },
+    {
+      "id": "tornado-7",
+      "run_id": 40438878278,
+      "artifact_id": 12705356259,
+      "original_machine_status": "reproduced_buggy_fail_fixed_pass",
+      "status": "log_and_machine_verified_buggy_fail_fixed_pass",
+      "n_tests": 1,
+      "buggy_errors": [
+        "TypeError: object Future can't be used in 'await' expression"
+      ],
+      "verifier_test_file": "tornado/test/ioloop_test.py",
+      "special_note": "Buggy old test passed; fixed-commit revised regression test revealed the defect.",
+      "run_url": "https://github.com/namyikim/adaptive-llm-router/actions/runs/40438878278",
+      "fixed_implementation_provided_to_llm": false,
+      "verifier_only_fixed_commit_regression_test": true,
+      "llm_repair_attempted": false,
+      "llm_verified_success": null
+    },
+    {
+      "id": "tornado-11",
+      "run_id": 40438878278,
+      "artifact_id": 12705356259,
+      "original_machine_status": "reproduced_buggy_fail_fixed_pass",
+      "status": "log_and_machine_verified_buggy_fail_fixed_pass",
+      "n_tests": 1,
+      "buggy_errors": [
+        "AssertionError: {} != {'foo': ['bar']}"
+      ],
+      "verifier_test_file": "tornado/test/httpserver_test.py",
+      "run_url": "https://github.com/namyikim/adaptive-llm-router/actions/runs/40438878278",
+      "fixed_implementation_provided_to_llm": false,
+      "verifier_only_fixed_commit_regression_test": true,
+      "llm_repair_attempted": false,
+      "llm_verified_success": null
+    },
+    {
+      "id": "tornado-14",
+      "run_id": 40438878278,
+      "artifact_id": 12705356259,
+      "original_machine_status": "reproduced_buggy_fail_fixed_pass",
+      "status": "log_and_machine_verified_buggy_fail_fixed_pass",
+      "n_tests": 1,
+      "buggy_errors": [
+        "RuntimeError: current IOLoop already exists"
+      ],
+      "verifier_test_file": "tornado/test/ioloop_test.py",
+      "run_url": "https://github.com/namyikim/adaptive-llm-router/actions/runs/40438878278",
+      "fixed_implementation_provided_to_llm": false,
+      "verifier_only_fixed_commit_regression_test": true,
+      "llm_repair_attempted": false,
+      "llm_verified_success": null
+    }
+  ]
+}
