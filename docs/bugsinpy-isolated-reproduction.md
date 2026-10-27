@@ -73,6 +73,21 @@ The classifier now recognizes unittest `_FailedTest` with a missing module attri
 
 The new GitHub Actions step summary displays explicit per-case statuses to prevent confusing the green job icon with a reproduced historical defect. Re-run case `tornado-6`, `execute=true` on updated main before recording any confirmed Tornado-6 reproduction.
 
+## 2026-10-27 Tornado-6: false positive caused by unittest test discovery
+
+[Actions run #40430425836](https://github.com/namyikim/adaptive-llm-router/actions/runs/40430425836) executed the pinned Tornado-6 buggy and fixed commits under the Python 3.7 container, and its **machine summary incorrectly reported** `reproduced_buggy_fail_fixed_pass`. In the actual downloadable artifact, **both buggy `LeakTest` methods failed to load**:
+
+```text
+ERROR: LeakTest (unittest.loader._FailedTest)
+AttributeError: module 'tornado.test.asyncio_test' has no attribute 'LeakTest'
+Ran 1 test in 0.000s
+FAILED (errors=1)
+```
+
+The fixed commit had one passing test for each selector. The buggy commit never entered the regression-test method, so **historical bug reproduction is not established**. The original artifact remains immutable as an example of incorrect reporting; its `verified_historical_reproduction=true` value must **not** be counted in quality metrics.
+
+The verdict logic now classifies `unittest.loader._FailedTest` as `test_not_collected`, which prevents false historical reproduction success. A CPU test includes the actual Tornado-6 failure pattern and verifies that the final status is inconclusive. Future work could use a separately reviewed *test-only* backport analogous to tqdm-6; do not assume this is appropriate without inspecting whether the historical fix also changes setup/test helpers, and never leak fixed-commit source as debugging input.
+
 ## 상태 해석
 
 | status | 의미 |
