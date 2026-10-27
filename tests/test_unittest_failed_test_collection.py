@@ -55,7 +55,7 @@ ModuleNotFoundError: No module named 'some_dependency'
 Ran 1 test in 0.000s
 FAILED (errors=1)
 """
-        self.assertEqual(classify_test_output(1, output), "test_not_collected")
+        self.assertEqual(classify_test_output(1, output), "environment_failure")
 
 
 if __name__ == "__main__":
