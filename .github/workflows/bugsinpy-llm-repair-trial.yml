@@ -1,0 +1,91 @@
+name: BugsInPy paired L2 L3 repair trial (manual, paid opt-in)
+on:
+  workflow_dispatch:
+    inputs:
+      case_id:
+        description: Choose audited historical bug
+        type: choice
+        options:
+          - tqdm-6
+          - tornado-6
+          - tornado-5
+          - tornado-7
+          - tornado-11
+          - tornado-14
+        default: tqdm-6
+      allow_paid:
+        description: Explicitly approve two paid Anthropic calls
+        type: boolean
+        default: false
+      execute_verifier:
+        description: Execute untrusted generated patches in isolated Docker
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  pilot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      CASE_ID: ${{ inputs.case_id }}
+      ALLOW_PAID: ${{ inputs.allow_paid }}
+      VERIFY_PATCH: ${{ inputs.execute_verifier }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate explicit financial and execution permissions
+        run: |
+          if [[ "$VERIFY_PATCH" == 'true' && "$ALLOW_PAID" != 'true' ]]; then
+            echo '::error::Paid opt-in required for generated-patch verification'
+            exit 1
+          fi
+      - name: Build offline verifier image only when explicitly requested
+        if: ${{ inputs.allow_paid && inputs.execute_verifier }}
+        run: |
+          if [[ "$CASE_ID" == tqdm-* ]]; then
+            docker build --pull -f docker/bugsinpy-py36.Dockerfile -t adaptive-bugsinpy:py36 .
+          else
+            docker build --pull -f docker/bugsinpy-py37.Dockerfile -t adaptive-bugsinpy:py37 .
+          fi
+      - name: Prepare public historical metadata if paid run
+        if: ${{ inputs.allow_paid }}
+        run: git clone --depth 1 --quiet https://github.com/soarsmu/BugsInPy.git /tmp/bugsinpy-public
+      - name: Run dry plan or explicitly paid paired trial
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set -euo pipefail
+          EXTRAS=()
+          if [[ "$ALLOW_PAID" == 'true' ]]; then
+            if [[ -z "$ANTHROPIC_API_KEY" ]]; then
+              echo '::error::ANTHROPIC_API_KEY repository secret is missing'
+              exit 1
+            fi
+            EXTRAS+=(--allow-paid --dataset-root /tmp/bugsinpy-public)
+          fi
+          if [[ "$VERIFY_PATCH" == 'true' ]]; then
+            EXTRAS+=(--execute-verifier)
+          fi
+          PYTHONPATH=src python -m adaptive_llm_router.bugsinpy_repair_trial \
+            --case-id "$CASE_ID" --workspace /tmp/bugsinpy-llm-trial \
+            --output-root "outputs/repair-trials/$CASE_ID" \
+            --max-tokens 4096 "${EXTRAS[@]}"
+      - name: Display trial results instead of implying workflow green means success
+        if: always()
+        run: |
+          if [[ -f "outputs/repair-trials/$CASE_ID/trial_summary.json" ]]; then
+            cat "outputs/repair-trials/$CASE_ID/trial_summary.json" | python -c 'import json,sys; r=json.load(sys.stdin); print(r["status"], {k:(v.get("status"), v.get("verified_patch_success")) for k,v in r.get("tiers",{}).items()})'
+          else
+            echo 'No trial results; check logs'
+          fi
+      - name: Upload generated patch and verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bugsinpy-repair-trial-${{ github.run_id }}
+          path: outputs/repair-trials/
+          if-no-files-found: warn
+          retention-days: 14
