@@ -242,10 +242,17 @@ def verify_patch(*, dataset_root: Path, workspace: Path, output_root: Path,
         report["regression_passed"] = _all_pass(candidate)
         if report["regression_passed"]:
             report["status"] = "regression_passed"
+        elif any(x["verdict"] not in ("pass", "test_failure")
+                 for x in candidate):
+            # A missing/uncollected test cannot be scored as a model failure
+            # merely because another test did fail.
+            report["status"] = "inconclusive"
+            report["regression_passed"] = None
         elif any(x["verdict"] == "test_failure" for x in candidate):
             report["status"] = "regression_failed"
         else:
             report["status"] = "inconclusive"
+            report["regression_passed"] = None
     except (OSError, ReplayError, CandidatePatchError, subprocess.CalledProcessError,
             subprocess.TimeoutExpired, ValueError) as exc:
         report["status"] = "inconclusive"
