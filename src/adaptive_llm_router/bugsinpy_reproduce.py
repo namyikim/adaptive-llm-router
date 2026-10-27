@@ -24,6 +24,63 @@ PROJECT_URLS = {"tqdm": "https://github.com/tqdm/tqdm.git",
 IMAGE_NAMES = {"tqdm": "adaptive-bugsinpy:py36",
                "tornado": "adaptive-bugsinpy:py37"}
 PYTHON_EXPECTED = {"tqdm": "3.6.9", "tornado": "3.7.0"}
+
+# Frozen six-case subset of BugsInPy master, checked against uploaded source rows.
+# Never execute arbitrary test commands or newer commits from a modified dataset.
+EXPECTED_COMMITS = {
+    "tqdm-6": (
+        "a4b9c86db548b2d0dbb5af7a6bbdc26ab47e1eec",
+        "6dad2e89019317e875c46d5a3a82a811ad6de2f9",
+    ),
+    "tornado-5": (
+        "2d4053daa56c609d642b214399e046671d4a593e",
+        "886643965b5cb782503d8d7b374b7a794ec2077b",
+    ),
+    "tornado-6": (
+        "fb74e4816ccfa7fc6a7abd8c8aab1f415cfc1b13",
+        "2905ee4fb3c283d40b10f609359e189c83a0dc06",
+    ),
+    "tornado-7": (
+        "fa3409179588536f2f743d16e537f6f9827fa92f",
+        "a3b44cd701e0e82693363701bc0346b0125d2362",
+    ),
+    "tornado-11": (
+        "79ef301eb05cac82c075198e502d94dad296f6aa",
+        "1131c9b50a6a4c0868d0d6fa5e0be077cf8fd1ca",
+    ),
+    "tornado-14": (
+        "81ee310adcd905fbdf7c98d9fb6ef0c5a46026c2",
+        "1d02ed606f1c52636462633d009bdcbaac644331",
+    ),
+}
+EXPECTED_TEST_COMMANDS = {
+    "tqdm-6": [
+        ["python", "-m", "pytest", "tqdm/tests/tests_synchronisation.py::test_imap"],
+    ],
+    "tornado-5": [
+        ["python", "-m", "unittest", "-q",
+         "tornado.test.ioloop_test.TestPeriodicCallbackMath.test_clock_backwards"],
+    ],
+    "tornado-6": [
+        ["python", "-m", "unittest", "-q",
+         "tornado.test.asyncio_test.LeakTest.test_ioloop_close_leak"],
+        ["python", "-m", "unittest", "-q",
+         "tornado.test.asyncio_test.LeakTest.test_asyncio_close_leak"],
+    ],
+    "tornado-7": [
+        ["python", "-m", "unittest", "-q",
+         "tornado.test.ioloop_test.TestIOLoopFutures.test_run_in_executor_native"],
+    ],
+    "tornado-11": [
+        ["python", "-m", "unittest", "-q",
+         "tornado.test.httpserver_test.HTTPServerRawTest.test_chunked_request_uppercase"],
+    ],
+    "tornado-14": [
+        ["python", "-m", "unittest", "-q",
+         "tornado.test.ioloop_test.TestIOLoopCurrent.test_force_current"],
+    ],
+}
+
 SHA = re.compile(r"^[0-9a-f]{40}$")
 ID = re.compile(r"^(tqdm|tornado)-(?:[0-9]+)$")
 # No shell expansions/pipes/redirections. Parse only whitelisted Python test runners.
@@ -92,6 +149,10 @@ def prepare_metadata(dataset_root: Path, case_id: str) -> dict:
     if not script.is_file():
         raise ReplayError("BugsInPy run_test.sh missing")
     commands = decode_test_commands(script.read_text(encoding="utf-8"))
+    if (buggy, fixed) != EXPECTED_COMMITS[case_id]:
+        raise ReplayError("BugsInPy SHA metadata differs from reviewed six-case manifest")
+    if commands != EXPECTED_TEST_COMMANDS[case_id]:
+        raise ReplayError("BugsInPy test commands differ from reviewed six-case manifest")
     return {
         "case_id": case_id, "project": project, "source": "BugsInPy",
         "python_version_historical": info["python_version"],
