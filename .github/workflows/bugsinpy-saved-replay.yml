@@ -1,12 +1,5 @@
 name: Archived BugsInPy format-assisted replay (no model API)
 on:
-  # One-off development validation requested in the current work. No main/PR
-  # auto-execution and no automatic paid workflow changes.
-  push:
-    branches:
-      - fix/audited-saved-response-replay-20261027
-    paths:
-      - .github/workflows/bugsinpy-saved-replay.yml
   workflow_dispatch:
     inputs:
       execute:
@@ -33,14 +26,14 @@ jobs:
       - name: Verify CPU suite before historical execution
         run: python -m unittest discover -s tests -v
       - name: Clone only public metadata
-        if: ${{ github.event_name == 'push' || inputs.execute }}
+        if: ${{ inputs.execute }}
         run: git clone --depth 1 --quiet https://github.com/soarsmu/BugsInPy.git /tmp/replay-bugsinpy
       - name: Build reviewed Python 3.6 container (no provider credentials)
-        if: ${{ github.event_name == 'push' || inputs.execute }}
+        if: ${{ inputs.execute }}
         run: docker build -f docker/bugsinpy-py36.Dockerfile -t adaptive-bugsinpy:py36 .
       - name: Replay both original answers with identical explicit format-assistance rules
         env:
-          EXECUTE_TESTS: ${{ github.event_name == 'push' || inputs.execute }}
+          EXECUTE_TESTS: ${{ inputs.execute }}
         run: |
           set -euo pipefail
           EXTRA=()
