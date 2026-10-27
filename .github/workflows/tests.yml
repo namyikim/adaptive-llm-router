@@ -43,3 +43,17 @@ jobs:
             --evidence-file benchmarks/data/bugsinpy_six_historical_reproductions.json \
             --output-root /tmp/bugsinpy-e2e-cpu-results
           python -c 'import json; d=json.load(open("/tmp/bugsinpy-e2e-cpu-results/e2e_summary.json")); assert d["status"]=="dry_run_no_api_no_patch_tests" and d["comparison"]["status"]=="not_measured" and not d["paid_api_enabled"]'
+      - name: Audit full original source and archived L3 diff without API or Docker
+        run: |
+          python scripts/audit_complete_source_context.py \
+            --buggy-root /tmp/bugsinpy-e2e-cpu-smoke/source/checkouts/tqdm-6/buggy \
+            --results /tmp/bugsinpy-e2e-cpu-results \
+            --candidate tests/fixtures/run_40463547156_l3.diff
+      - name: Save no-API source context and candidate applicability audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-context-audit-${{ github.run_id }}
+          path: /tmp/bugsinpy-e2e-cpu-results/
+          if-no-files-found: ignore
+          retention-days: 14
