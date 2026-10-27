@@ -1,0 +1,75 @@
+name: Archived BugsInPy format-assisted replay (no model API)
+on:
+  workflow_dispatch:
+    inputs:
+      execute:
+        description: 'Run offline Docker regression tests on the reviewed saved answers; no new model calls'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  archived-replay:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify CPU suite before historical execution
+        run: python -m unittest discover -s tests -v
+      - name: Clone only public metadata
+        if: ${{ inputs.execute }}
+        run: git clone --depth 1 --quiet https://github.com/soarsmu/BugsInPy.git /tmp/replay-bugsinpy
+      - name: Build reviewed Python 3.6 container (no provider credentials)
+        if: ${{ inputs.execute }}
+        run: docker build -f docker/bugsinpy-py36.Dockerfile -t adaptive-bugsinpy:py36 .
+      - name: Replay both original answers with identical explicit format-assistance rules
+        env:
+          EXECUTE_TESTS: ${{ inputs.execute }}
+        run: |
+          set -euo pipefail
+          EXTRA=()
+          if [ "$EXECUTE_TESTS" = "true" ]; then
+            EXTRA+=(--execute)
+          fi
+          python -m adaptive_llm_router.bugsinpy_saved_pair_replay \
+            --archive-file tests/fixtures/run_40468990139_responses.json \
+            --output-root outputs/normalized-replay \
+            --workspace /tmp/replay-workspaces \
+            --dataset-root /tmp/replay-bugsinpy "${EXTRA[@]}"
+      - name: Show original and assisted outcomes separately
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          p = Path('outputs/normalized-replay/normalized_replay_summary.json')
+          lines = ['## Archived response replay — no new model calls', '',
+                   'Formatting-assisted results do not replace original scores.', '',
+                   '| Tier | Original status | Assisted test result |',
+                   '| --- | --- | --- |']
+          if p.exists():
+              report = json.loads(p.read_text())
+              for tier, row in report['results'].items():
+                  lines.append(f"| {tier} | {row['original_status']} | {row['normalized_regression_passed']} |")
+              lines += ['', 'New provider calls: 0. Inspect baseline/fixed/candidate logs before accepting outcomes.']
+          else:
+              lines.append('| - | Replay did not produce evidence | Unverified |')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
+              f.write('\n'.join(lines) + '\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: archived-normalized-replay-${{ github.run_id }}
+          path: outputs/normalized-replay/
+          retention-days: 14
+          if-no-files-found: warn
