@@ -12,6 +12,7 @@ on:
           - tornado-7
           - tornado-11
           - tornado-14
+          - tornado-remaining
           - all
         default: tqdm-6
       execute:

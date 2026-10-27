@@ -20,6 +20,20 @@ from urllib.parse import urlparse
 from .bugsinpy_cases import parse_info
 
 ALLOWED_CASES = ("tqdm-6", "tornado-5", "tornado-6", "tornado-7", "tornado-11", "tornado-14")
+TORNADO_REMAINING = ("tornado-5", "tornado-7", "tornado-11", "tornado-14")
+# Case-specific verifier-only overlays: these files come from pinned FIXED commits.
+# Do not expose their content or the implementation patch to model prompts.
+REGRESSION_TEST_FILES = {
+    "tqdm-6": "tqdm/tests/tests_synchronisation.py",
+    "tornado-5": "tornado/test/ioloop_test.py",
+    "tornado-6": "tornado/test/asyncio_test.py",
+    "tornado-7": "tornado/test/ioloop_test.py",
+    "tornado-11": "tornado/test/httpserver_test.py",
+    "tornado-14": "tornado/test/ioloop_test.py",
+}
+# Tornado-7's test existed on both commits, but its body was substantially
+# REVISED by the fix. Always compare against the pinned revised verifier test.
+REVISED_REGRESSION_TEST_CASES = frozenset({"tornado-7"})
 PROJECT_URLS = {"tqdm": "https://github.com/tqdm/tqdm.git",
                 "tornado": "https://github.com/tornadoweb/tornado.git"}
 IMAGE_NAMES = {"tqdm": "adaptive-bugsinpy:py36",
@@ -244,8 +258,8 @@ def docker_test(image: str, source_root: Path, command: list[str],
                 regression_test_from_fixed: Path | None = None) -> dict:
     """Run one allowlisted test; optionally bind-mount a fixed-commit TEST file.
 
-    Does not copy implementation patches. Only the pinned tqdm-6 and
-    tornado-6 cases have approved fixed-commit regression-test overlays.
+    Does not copy implementation patches. Fixed-commit verifier test files
+    are only used for the six SHA-pinned and reviewed historical cases.
     """
     args = [
         "docker", "run", "--rm", "--pull=never",
@@ -262,6 +276,8 @@ def docker_test(image: str, source_root: Path, command: list[str],
         allowed_test_files = {
             "tests_synchronisation.py": "tqdm/tests/tests_synchronisation.py",
             "asyncio_test.py": "tornado/test/asyncio_test.py",
+            "ioloop_test.py": "tornado/test/ioloop_test.py",
+            "httpserver_test.py": "tornado/test/httpserver_test.py",
         }
         relative_test_file = allowed_test_files.get(regression_test_from_fixed.name)
         if (not regression_test_from_fixed.is_file() or relative_test_file is None
@@ -333,25 +349,32 @@ def run_one(record: dict, workspace: Path, output_root: Path) -> dict:
             rows = []
             for i, command in enumerate(record["test_commands"]):
                 row = docker_test(record["docker_image"], sources[version], command)
-                backportable_test_files = {
-                    "tqdm-6": "tqdm/tests/tests_synchronisation.py",
-                    "tornado-6": "tornado/test/asyncio_test.py",
-                }
-                if (case_id in backportable_test_files and version == "buggy"
-                        and row["verdict"] == "test_not_collected"):
-                    # Both pinned cases ADD a regression test in the fixed
-                    # commit. Mount only that test file into the buggy checkout,
-                    # never the historical implementation patch.
-                    original_log = f"{case_id}_buggy_{i + 1}_missing_test.log"
+                verifier_test_file = REGRESSION_TEST_FILES.get(case_id)
+                test_revised_in_fixed = case_id in REVISED_REGRESSION_TEST_CASES
+                need_verifier_test = (
+                    version == "buggy" and verifier_test_file is not None
+                    and (row["verdict"] == "test_not_collected"
+                         or test_revised_in_fixed)
+                )
+                if need_verifier_test:
+                    # For missing tests, mount only the pinned fixed commit's
+                    # TEST file. Tornado-7 existed before the fix, but the
+                    # fixed commit substantially REVISED the test; preserve
+                    # the original result before verifying against that test.
+                    original_suffix = ("revised_test_original" if test_revised_in_fixed
+                                       else "missing_test")
+                    original_log = f"{case_id}_buggy_{i + 1}_{original_suffix}.log"
                     (output_root / original_log).write_text(
                         row.pop("output"), encoding="utf-8")
-                    fixed_test_file = backportable_test_files[case_id]
-                    test_from_fixed = sources["fixed"] / fixed_test_file
+                    test_from_fixed = sources["fixed"] / verifier_test_file
                     backport = result.setdefault("regression_test_backport", {
                         "provenance": "historical_fixed_commit_test_file_for_verifier_only",
                         "no_implementation_patch_copied": True,
-                        "fixed_test_file": fixed_test_file,
-                        "missing_test_log": original_log,
+                        "fixed_test_file": verifier_test_file,
+                        "original_test_log": original_log,
+                        "missing_test_log": (
+                            original_log if not test_revised_in_fixed else None
+                        ),
                         "test_sha256": (
                             hashlib.sha256(test_from_fixed.read_bytes()).hexdigest()
                             if test_from_fixed.is_file() else None
@@ -361,7 +384,11 @@ def run_one(record: dict, workspace: Path, output_root: Path) -> dict:
                     backport["attempts"].append({
                         "test_command_index": i + 1,
                         "original_verdict": row["verdict"],
-                        "missing_test_log": original_log,
+                        "original_test_log": original_log,
+                        "test_overlay_reason": (
+                            "fixed_commit_revised_test" if test_revised_in_fixed
+                            else "missing_regression_test_in_buggy_commit"
+                        ),
                     })
                     if test_from_fixed.is_file():
                         row = docker_test(
@@ -373,7 +400,7 @@ def run_one(record: dict, workspace: Path, output_root: Path) -> dict:
                             "command": command,
                             "exit_code": None,
                             "verdict": "test_not_collected",
-                            "output": "Fixed-commit regression test file is missing",
+                            "output": "Pinned verifier-only regression test file is missing",
                         }
                 row["output_file"] = f"{case_id}_{version}_{i + 1}.log"
                 (output_root / row["output_file"]).write_text(
@@ -397,14 +424,16 @@ def main() -> None:
     p.add_argument("--dataset-root", type=Path, required=True)
     p.add_argument("--workspace", type=Path, required=True)
     p.add_argument("--output-root", type=Path, required=True)
-    p.add_argument("--cases", nargs="+", choices=(*ALLOWED_CASES, "all"),
+    p.add_argument("--cases", nargs="+",
+                   choices=(*ALLOWED_CASES, "all", "tornado-remaining"),
                    default=["tqdm-6", "tornado-6"])
     p.add_argument("--execute", action="store_true",
                    help="Explicit opt-in to cloning and running public historical tests in Docker")
     args = p.parse_args()
-    cases = list(ALLOWED_CASES) if args.cases == ["all"] else args.cases
-    if "all" in cases and args.cases != ["all"]:
-        p.error("--cases all must be used alone")
+    groups = {"all": ALLOWED_CASES, "tornado-remaining": TORNADO_REMAINING}
+    if any(group in args.cases for group in groups) and len(args.cases) != 1:
+        p.error("Case groups must be selected alone")
+    cases = list(groups.get(args.cases[0], args.cases)) if len(args.cases) == 1 else args.cases
     args.output_root.mkdir(parents=True, exist_ok=True)
     manifest = []
     for case_id in dict.fromkeys(cases):
