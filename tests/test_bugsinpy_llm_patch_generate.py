@@ -18,13 +18,21 @@ class PatchPromptTests(unittest.TestCase):
         self.source=self.root/"buggy"
         (self.source/"tqdm").mkdir(parents=True)
         (self.source/"tqdm/_tqdm.py").write_text("def broken(): return 0\n")
+        for args in (["init", "-q"], ["add", "."],
+                     ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+                      "commit", "-qm", "synthetic source"]):
+            subprocess.run(["git", "-C", str(self.source), *args], check=True,
+                           capture_output=True, timeout=20)
+        self.sha = subprocess.check_output(["git", "-C", str(self.source), "rev-parse", "HEAD"],
+                                           text=True, timeout=20).strip()
+        pins = patch.dict(EXPECTED_COMMITS, {"tqdm-6": (self.sha, "f" * 40)})
+        pins.start()
+        self.addCleanup(pins.stop)
         self.failure=self.root/"failure.txt"
         self.failure.write_text("AttributeError from buggy reproduction")
 
     def test_pinned_buggy_only(self):
-        with patch("adaptive_llm_router.bugsinpy_llm_patch_generate.subprocess.check_output",
-                   return_value=EXPECTED_COMMITS["tqdm-6"][0]):
-            rec=prepare("tqdm-6",self.source,self.failure.read_text())
+        rec=prepare("tqdm-6",self.source,self.failure.read_text())
         self.assertIn("def broken()",rec["prompt"])
         self.assertNotIn("fixed_commit",rec["prompt"])
         self.assertEqual(rec["input_sha256"],hashlib.sha256(rec["prompt"].encode()).hexdigest())
@@ -74,10 +82,8 @@ class PatchPromptTests(unittest.TestCase):
             "--buggy-checkout",str(self.source),
             "--failure-file",str(self.failure),
             "--output-root",str(out)
-        ]),patch("adaptive_llm_router.bugsinpy_llm_patch_generate.subprocess.check_output",
-            return_value=EXPECTED_COMMITS["tqdm-6"][0]),patch(
-            "adaptive_llm_router.bugsinpy_llm_patch_generate.call_anthropic",
-            side_effect=AssertionError("must not call")):
+        ]), patch("adaptive_llm_router.bugsinpy_llm_patch_generate.call_anthropic",
+                  side_effect=AssertionError("must not call")):
             main()
         import json
         report=json.loads((out/"generation_report.json").read_text())
@@ -85,6 +91,8 @@ class PatchPromptTests(unittest.TestCase):
         self.assertFalse(report["paid_enabled"])
         self.assertFalse(report["results"])
         self.assertTrue((out/"prompt.txt").is_file())
+        self.assertTrue((out/"source_manifest.json").is_file())
+        self.assertEqual(report["source_context_version"], "full-pinned-files-v2")
 
 if __name__=="__main__":
     unittest.main()
