@@ -1,0 +1,93 @@
+name: Tornado-6 readiness (no model API)
+on:
+  # One-off development validation; remove this push trigger before merge.
+  push:
+    branches:
+      - test/tornado6-no-api-readiness-20261027
+    paths:
+      - .github/workflows/bugsinpy-tornado-readiness.yml
+  workflow_dispatch:
+    inputs:
+      execute_historical_tests:
+        description: 'Run original buggy/fixed leak tests in offline Docker; never call models'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  readiness:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run CPU suite before any historical execution
+        run: python -m unittest discover -s tests -v
+      - name: Read public benchmark metadata without setup scripts
+        run: git clone --depth 1 --quiet https://github.com/soarsmu/BugsInPy.git /tmp/tornado-metadata
+      - name: Prepare full pinned Tornado inputs with all model calls disabled
+        run: |
+          python -m adaptive_llm_router.bugsinpy_eval_pipeline \
+            --case-id tornado-6 \
+            --dataset-root /tmp/tornado-metadata \
+            --workspace /tmp/tornado-readiness-work \
+            --evidence-file benchmarks/data/bugsinpy_six_historical_reproductions.json \
+            --output-root outputs/tornado-readiness/input
+          python -m adaptive_llm_router.bugsinpy_tornado_readiness \
+            --results-root outputs/tornado-readiness/input \
+            --buggy-root /tmp/tornado-readiness-work/source/checkouts/tornado-6/buggy \
+            --output outputs/tornado-readiness/source_readiness.json
+      - name: Build reviewed historical image without provider credentials
+        if: ${{ github.event_name == 'push' || inputs.execute_historical_tests }}
+        run: docker build -f docker/bugsinpy-py37.Dockerfile -t adaptive-bugsinpy:py37 .
+      - name: Independently reproduce both original leak tests and audit their logs
+        if: ${{ github.event_name == 'push' || inputs.execute_historical_tests }}
+        run: |
+          python -m adaptive_llm_router.bugsinpy_reproduce \
+            --cases tornado-6 --execute \
+            --dataset-root /tmp/tornado-metadata \
+            --workspace /tmp/tornado-readiness-historical \
+            --output-root outputs/tornado-readiness/historical
+          python -m adaptive_llm_router.bugsinpy_tornado_readiness \
+            --results-root outputs/tornado-readiness/input \
+            --buggy-root /tmp/tornado-readiness-work/source/checkouts/tornado-6/buggy \
+            --reproduction-file outputs/tornado-readiness/historical/tornado-6.json \
+            --output outputs/tornado-readiness/ready_for_pilot.json
+      - name: Report readiness separately from unmeasured model quality
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path('outputs/tornado-readiness')
+          p = root / 'ready_for_pilot.json'
+          if not p.exists():
+              p = root / 'source_readiness.json'
+          lines = ['## Tornado-6 preflight: no model API calls', '',
+                   'This is NOT a model-generated patch evaluation.']
+          if p.exists():
+              report = json.loads(p.read_text())
+              lines += [f"Full source ready: {report['source_context_ready']}",
+                        f"Both historical leak tests verified: {report['historical_reproduction_verified']}",
+                        f"Prompt UTF-8 bytes: {report['prompt_bytes']}",
+                        'L2/L3 model outcomes: not measured.']
+          else:
+              lines.append('Preparation did not produce verified evidence. Inspect logs.')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
+              output.write('\n\n'.join(lines) + '\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tornado6-readiness-${{ github.run_id }}
+          path: outputs/tornado-readiness/
+          retention-days: 14
+          if-no-files-found: warn
